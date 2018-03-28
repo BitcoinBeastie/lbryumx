@@ -1,19 +1,7 @@
 import struct
-from collections import namedtuple
 from electrumx.lib.enum import Enumeration
+from lbryumx.model import NameClaim, ClaimSupport, ClaimUpdate
 # TODO: Take this to lbryschema (it's also on lbryum and lbryum-server)
-
-
-class NameClaim(namedtuple("NameClaim", "name value")):
-    pass
-
-
-class ClaimUpdate(namedtuple("ClaimUpdate", "name claim_id value")):
-    pass
-
-
-class ClaimSupport(namedtuple("ClaimSupport", "name claim_id")):
-    pass
 
 
 opcodes = Enumeration("Opcodes", [

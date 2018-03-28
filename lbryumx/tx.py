@@ -1,26 +1,6 @@
-from collections import namedtuple
 from electrumx.lib.tx import Deserializer
 from lbryumx.opcodes import decode_claim_script
-from electrumx.lib.util import cachedproperty
-
-
-class LBRYTx(namedtuple("Tx", "version inputs outputs locktime")):
-    '''Transaction that can contain claim, update or support outputs.'''
-
-    @cachedproperty
-    def is_coinbase(self):
-        return self.inputs[0].is_coinbase
-
-    @cachedproperty
-    def has_claims(self):
-        for output in self.outputs:
-            if output.claim:
-                return True
-        return False
-
-
-class TxClaimOutput(namedtuple("TxClaimOutput", "value pk_script claim")):
-    pass
+from lbryumx.model import TxClaimOutput, LBRYTx
 
 
 class LBRYDeserializer(Deserializer):
