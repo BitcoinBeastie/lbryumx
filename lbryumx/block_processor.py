@@ -16,9 +16,10 @@ class LBRYBlockProcessor(BlockProcessor):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.claim_cache = {}
+        self.claim_name_sequence_cache = {}
 
     def flush_utxos(self, batch):
-        # TODO: flush claim cache
+        # TODO: flush claim caches
         return super().flush_utxos(batch)
 
     def advance_txs(self, txs):
@@ -26,6 +27,7 @@ class LBRYBlockProcessor(BlockProcessor):
         get_address = self.coin.address_from_script
         height = self.height + 1
         put_claim = self.claim_cache.__setitem__
+        claim_name_sequence = self.claim_name_sequence_cache
         for tx, txid in txs:
             if tx.has_claims:
                 for index, output in enumerate(tx.outputs):
@@ -43,7 +45,13 @@ class LBRYBlockProcessor(BlockProcessor):
                         except Exception:
                             pass
                         put_claim(claim_id, (name, value, address, height, cert_id))
-                        # TODO: claim order and signed by (they require history, better during flush to disk)
+                        claims_for_name = claim_name_sequence.get(claim.name, {})
+                        if not claims_for_name:
+                            claims_for_name[claim_id] = 1
+                        else:
+                            claims_for_name[claim_id] = max(i for i in claims_for_name.values()) + 1
+                        claim_name_sequence[claim.name] = claims_for_name
+                        # TODO: add cert_id->[signatures,]
         return undo_info
 
 
