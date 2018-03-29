@@ -1,6 +1,19 @@
 from collections import namedtuple
+import msgpack
 from electrumx.lib.util import cachedproperty
 # Classes representing data and their serializers, if any.
+
+
+class ClaimInfo(namedtuple("NameClaim", "name value address height cert_id")):
+    '''Claim information as its stored on database'''
+
+    @classmethod
+    def from_serialized(cls, serialized):
+        return cls(*msgpack.loads(serialized))
+
+    @property
+    def serialized(self):
+        return msgpack.dumps(self)
 
 
 class NameClaim(namedtuple("NameClaim", "name value")):
