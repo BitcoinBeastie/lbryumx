@@ -17,7 +17,8 @@ class LBRYBlockProcessor(BlockProcessor):
         self.claim_cache = {}
         self.claims_for_name_cache = {}
         self.claims_signed_by_cert_cache = {}
-        self.claims_db = self.names_db = self.signatures_db = None
+        self.outpoint_to_claim_id_cache = {}
+        self.claims_db = self.names_db = self.signatures_db = self.outpoint_to_claim_id_db = None
         super().__init__(*args, **kwargs)
 
     def open_dbs(self):
@@ -33,9 +34,11 @@ class LBRYBlockProcessor(BlockProcessor):
                 self.claims_db.close()
                 self.names_db.close()
                 self.signatures_db.close()
+                self.outpoint_to_claim_id_db.close()
             self.claims_db = self.db_class('claims', for_sync)
             self.names_db = self.db_class('names', for_sync)
             self.signatures_db = self.db_class('signatures', for_sync)
+            self.outpoint_to_claim_id_db = self.db_class('outpoint_claim_id', for_sync)
             log_reason('opened claim DBs', self.claims_db.for_sync)
         super().open_dbs()
 
@@ -44,33 +47,41 @@ class LBRYBlockProcessor(BlockProcessor):
         with self.claims_db.write_batch() as claims_batch:
             with self.names_db.write_batch() as names_batch:
                 with self.signatures_db.write_batch() as signed_claims_batch:
-                    self.flush_claims(claims_batch, names_batch, signed_claims_batch)
+                    with self.outpoint_to_claim_id_db.write_batch() as outpoint_batch:
+                        self.flush_claims(claims_batch, names_batch, signed_claims_batch, outpoint_batch)
         return super().flush_utxos(utxo_batch)
 
-    def flush_claims(self, batch, names_batch, signed_claims_batch):
+    def flush_claims(self, batch, names_batch, signed_claims_batch, outpoint_batch):
         flush_start = time.time()
         write_claim, write_name, write_cert = batch.put, names_batch.put, signed_claims_batch.put
+        write_outpoint = outpoint_batch.put
         for key, claim in self.claim_cache.items():
             write_claim(key, claim)
         for name, claims in self.claims_for_name_cache.items():
             write_name(name, msgpack.dumps(claims))
         for cert_id, claims in self.claims_signed_by_cert_cache.items():
             write_cert(cert_id, msgpack.dumps(claims))
+        for key, claim_id in self.outpoint_to_claim_id_cache.items():
+            write_outpoint(key, claim_id)
         if self.claims_db.for_sync:
-            self.logger.info('flushed {:,d} blocks with {:,d} claims and {:,d} certificates added'
-                             ' in {:.1f}s, committing...'
+            self.logger.info('flushed {:,d} blocks with {:,d} claims, {:,d} outpoints, {:,d} names '
+                             'and {:,d} certificates added in {:.1f}s, committing...'
                              .format(self.height - self.db_height,
-                                     len(self.claim_cache), len(self.claims_signed_by_cert_cache),
+                                     len(self.claim_cache), len(self.outpoint_to_claim_id_cache),
+                                     len(self.claims_for_name_cache),
+                                     len(self.claims_signed_by_cert_cache),
                                      time.time() - flush_start))
         self.claim_cache = {}
         self.claims_for_name_cache = {}
         self.claims_signed_by_cert_cache = {}
+        self.outpoint_to_claim_id_cache = {}
 
     def assert_flushed(self):
         super().assert_flushed()
         assert not self.claim_cache
         assert not self.claims_for_name_cache
         assert not self.claims_signed_by_cert_cache
+        assert not self.outpoint_to_claim_id_cache
 
     def advance_txs(self, txs):
         # TODO: generate claim undo info!
@@ -97,6 +108,7 @@ class LBRYBlockProcessor(BlockProcessor):
             pass
         self.claim_cache[claim_id] = ClaimInfo(name, value, txid, nout, amount, address, height, cert_id).serialized
         self.put_claim_for_name(name, claim_id)
+        self.outpoint_to_claim_id_cache[txid + struct.pack('>I', nout)] = claim_id
 
     def get_claims_for_name(self, name):
         if name in self.claims_for_name_cache: return self.claims_for_name_cache[name]
