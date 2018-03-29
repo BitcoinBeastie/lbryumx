@@ -20,7 +20,6 @@ class LBRYBlockProcessor(BlockProcessor):
         super().__init__(*args, **kwargs)
 
     def open_dbs(self):
-        return super().open_dbs()
         def log_reason(message, is_for_sync):
             reason = 'sync' if is_for_sync else 'serving'
             self.logger.info('{} for {}'.format(message, reason))
@@ -37,11 +36,12 @@ class LBRYBlockProcessor(BlockProcessor):
             self.names_db = self.db_class('names', for_sync)
             self.signatures_db = self.db_class('signatures', for_sync)
             log_reason('opened claim DBs', self.claims_db.for_sync)
+        super().open_dbs()
 
     def flush_utxos(self, utxo_batch):
         # flush claims together with utxos as they are parsed together
         # TODO: flush names and signatures caches
-        with self.utxo_db.write_batch() as claims_batch:
+        with self.claims_db.write_batch() as claims_batch:
             self.flush_claims(claims_batch)
         return super().flush_utxos(utxo_batch)
 
@@ -50,7 +50,7 @@ class LBRYBlockProcessor(BlockProcessor):
         write = batch.put
         for key, claim in self.claim_cache.items():
             write(key, claim)
-        if self.utxo_db.for_sync:
+        if self.claims_db.for_sync:
             self.logger.info('flushed {:,d} blocks with {:,d} claims '
                              'added, {:,d} deleted in {:.1f}s, committing...'
                              .format(self.height - self.db_height,
