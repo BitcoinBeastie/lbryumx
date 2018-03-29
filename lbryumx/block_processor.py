@@ -58,6 +58,10 @@ class LBRYBlockProcessor(BlockProcessor):
                                      time.time() - flush_start))
         self.claim_cache = {}
 
+    def assert_flushed(self):
+        super().assert_flushed()
+        assert not self.claim_cache
+
     def advance_txs(self, txs):
         # TODO: generate claim undo info!
         undo_info = super().advance_txs(txs)
