@@ -72,10 +72,10 @@ class LBRYBlockProcessor(BlockProcessor):
                     claim = output.claim
                     if isinstance(claim, NameClaim):
                         claim_id = claim_id_hash(txid, index)
-                        self.advance_claim_name_transaction(output, height, claim_id)
+                        self.advance_claim_name_transaction(output, height, claim_id, txid, index, output.value)
         return undo_info
 
-    def advance_claim_name_transaction(self, output, height, claim_id):
+    def advance_claim_name_transaction(self, output, height, claim_id, txid, nout, amount):
         address = self.coin.address_from_script(output.pk_script)
         name, value, cert_id = output.claim.name, output.claim.value, None
         try:
@@ -84,7 +84,7 @@ class LBRYBlockProcessor(BlockProcessor):
             self.claims_signed_by_cert_cache.setdefault(cert_id, []).append(claim_id)
         except Exception:
             pass
-        self.claim_cache[claim_id] = ClaimInfo(name, value, address, height, cert_id).serialized
+        self.claim_cache[claim_id] = ClaimInfo(name, value, txid, nout, amount, address, height, cert_id).serialized
 
         claims_for_name = self.claims_for_name_cache.get(name, {}).values()
         self.claims_for_name_cache.setdefault(name, {})[claim_id] = max(claims_for_name or [0]) + 1

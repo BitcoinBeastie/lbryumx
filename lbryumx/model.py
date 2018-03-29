@@ -4,7 +4,7 @@ from electrumx.lib.util import cachedproperty
 # Classes representing data and their serializers, if any.
 
 
-class ClaimInfo(namedtuple("NameClaim", "name value address height cert_id")):
+class ClaimInfo(namedtuple("NameClaim", "name value txid nout amount address height cert_id")):
     '''Claim information as its stored on database'''
 
     @classmethod
