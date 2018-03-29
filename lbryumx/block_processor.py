@@ -14,7 +14,7 @@ class LBRYBlockProcessor(BlockProcessor):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.claim_cache = {}
-        self.claim_name_sequence_cache = {}
+        self.claims_for_name_cache = {}
 
     def flush_utxos(self, batch):
         # TODO: flush claim caches
@@ -42,12 +42,8 @@ class LBRYBlockProcessor(BlockProcessor):
             pass
         self.claim_cache[claim_id] = (name, value, address, height, cert_id,)
 
-        claims_for_name = self.claim_name_sequence_cache.get(name, {})
-        if not claims_for_name:
-            claims_for_name[claim_id] = 1
-        else:
-            claims_for_name[claim_id] = max(i for i in claims_for_name.values()) + 1
-        self.claim_name_sequence_cache[name] = claims_for_name
+        claims_for_name = self.claims_for_name_cache.get(name, {}).values()
+        self.claims_for_name_cache.setdefault(name, {})[claim_id] = max(claims_for_name or [0]) + 1
         # TODO: add cert_id->[signatures,]
 
 
