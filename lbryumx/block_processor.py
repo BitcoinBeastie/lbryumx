@@ -2,6 +2,7 @@ import hashlib
 import struct
 import time
 from binascii import hexlify
+import msgpack
 
 from electrumx.server.block_processor import BlockProcessor
 from lbryschema.decode import smart_decode
@@ -42,14 +43,17 @@ class LBRYBlockProcessor(BlockProcessor):
         # flush claims together with utxos as they are parsed together
         # TODO: flush names and signatures caches
         with self.claims_db.write_batch() as claims_batch:
-            self.flush_claims(claims_batch)
+            with self.names_db.write_batch() as names_batch:
+                self.flush_claims(claims_batch, names_batch)
         return super().flush_utxos(utxo_batch)
 
-    def flush_claims(self, batch):
+    def flush_claims(self, batch, names_batch):
         flush_start = time.time()
-        write = batch.put
+        write_claim, write_name = batch.put, names_batch.put
         for key, claim in self.claim_cache.items():
-            write(key, claim)
+            write_claim(key, claim)
+        for name, claims in self.claims_for_name_cache.items():
+            write_name(name, msgpack.dumps(claims))
         if self.claims_db.for_sync:
             self.logger.info('flushed {:,d} blocks with {:,d} claims '
                              'added, {:,d} deleted in {:.1f}s, committing...'
@@ -57,10 +61,12 @@ class LBRYBlockProcessor(BlockProcessor):
                                      len(self.claim_cache), 0,
                                      time.time() - flush_start))
         self.claim_cache = {}
+        self.claims_for_name_cache = {}
 
     def assert_flushed(self):
         super().assert_flushed()
         assert not self.claim_cache
+        assert not self.claims_for_name_cache
 
     def advance_txs(self, txs):
         # TODO: generate claim undo info!
@@ -85,9 +91,17 @@ class LBRYBlockProcessor(BlockProcessor):
         except Exception:
             pass
         self.claim_cache[claim_id] = ClaimInfo(name, value, txid, nout, amount, address, height, cert_id).serialized
+        self.put_claim_for_name(name, claim_id)
 
-        claims_for_name = self.claims_for_name_cache.get(name, {}).values()
-        self.claims_for_name_cache.setdefault(name, {})[claim_id] = max(claims_for_name or [0]) + 1
+    def get_claims_for_name(self, name):
+        if name in self.claims_for_name_cache: return self.claims_for_name_cache[name]
+        db_claim = self.names_db.get(name)
+        return msgpack.loads(db_claim) if db_claim else {}
+
+    def put_claim_for_name(self, name, claim_id):
+        claims = self.get_claims_for_name(name)
+        claims[claim_id] = max(claims.values() or [0]) + 1
+        self.claims_for_name_cache[name] = claims
 
 
 def claim_id_hash(txid, n):
