@@ -41,32 +41,36 @@ class LBRYBlockProcessor(BlockProcessor):
 
     def flush_utxos(self, utxo_batch):
         # flush claims together with utxos as they are parsed together
-        # TODO: flush names and signatures caches
         with self.claims_db.write_batch() as claims_batch:
             with self.names_db.write_batch() as names_batch:
-                self.flush_claims(claims_batch, names_batch)
+                with self.signatures_db.write_batch() as signed_claims_batch:
+                    self.flush_claims(claims_batch, names_batch, signed_claims_batch)
         return super().flush_utxos(utxo_batch)
 
-    def flush_claims(self, batch, names_batch):
+    def flush_claims(self, batch, names_batch, signed_claims_batch):
         flush_start = time.time()
-        write_claim, write_name = batch.put, names_batch.put
+        write_claim, write_name, write_cert = batch.put, names_batch.put, signed_claims_batch.put
         for key, claim in self.claim_cache.items():
             write_claim(key, claim)
         for name, claims in self.claims_for_name_cache.items():
             write_name(name, msgpack.dumps(claims))
+        for cert_id, claims in self.claims_signed_by_cert_cache.items():
+            write_cert(cert_id, msgpack.dumps(claims))
         if self.claims_db.for_sync:
-            self.logger.info('flushed {:,d} blocks with {:,d} claims '
-                             'added, {:,d} deleted in {:.1f}s, committing...'
+            self.logger.info('flushed {:,d} blocks with {:,d} claims and {:,d} certificates added'
+                             ' in {:.1f}s, committing...'
                              .format(self.height - self.db_height,
-                                     len(self.claim_cache), 0,
+                                     len(self.claim_cache), len(self.claims_signed_by_cert_cache),
                                      time.time() - flush_start))
         self.claim_cache = {}
         self.claims_for_name_cache = {}
+        self.claims_signed_by_cert_cache = {}
 
     def assert_flushed(self):
         super().assert_flushed()
         assert not self.claim_cache
         assert not self.claims_for_name_cache
+        assert not self.claims_signed_by_cert_cache
 
     def advance_txs(self, txs):
         # TODO: generate claim undo info!
@@ -85,9 +89,10 @@ class LBRYBlockProcessor(BlockProcessor):
         address = self.coin.address_from_script(output.pk_script)
         name, value, cert_id = output.claim.name, output.claim.value, None
         try:
-            parse_lbry_uri(name)  # skip invalid names
+            parse_lbry_uri(name.decode())  # skip invalid names
             cert_id = smart_decode(value).certificate_id
-            self.claims_signed_by_cert_cache.setdefault(cert_id, []).append(claim_id)
+            if cert_id:
+                self.put_claim_id_signed_by_cert_id(cert_id, claim_id)
         except Exception:
             pass
         self.claim_cache[claim_id] = ClaimInfo(name, value, txid, nout, amount, address, height, cert_id).serialized
@@ -95,13 +100,21 @@ class LBRYBlockProcessor(BlockProcessor):
 
     def get_claims_for_name(self, name):
         if name in self.claims_for_name_cache: return self.claims_for_name_cache[name]
-        db_claim = self.names_db.get(name)
-        return msgpack.loads(db_claim) if db_claim else {}
+        db_claims = self.names_db.get(name)
+        return msgpack.loads(db_claims) if db_claims else {}
 
     def put_claim_for_name(self, name, claim_id):
         claims = self.get_claims_for_name(name)
         claims[claim_id] = max(claims.values() or [0]) + 1
         self.claims_for_name_cache[name] = claims
+
+    def get_signed_claim_id_by_cert_id(self, cert_id):
+        if cert_id in self.claims_signed_by_cert_cache: return self.claims_signed_by_cert_cache[cert_id]
+        db_claims = self.signatures_db.get(cert_id)
+        return msgpack.loads(db_claims) if db_claims else tuple()
+
+    def put_claim_id_signed_by_cert_id(self, cert_id, claim_id):
+        self.claims_signed_by_cert_cache[cert_id] = self.get_signed_claim_id_by_cert_id(cert_id) + (claim_id,)
 
 
 def claim_id_hash(txid, n):
