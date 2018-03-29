@@ -12,16 +12,37 @@ from lbryumx.model import NameClaim, ClaimUpdate, ClaimSupport
 class LBRYBlockProcessor(BlockProcessor):
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         self.claim_cache = {}
         self.claims_for_name_cache = {}
         self.claims_signed_by_cert_cache = {}
+        self.claims_db = self.names_db = self.signatures_db = None
+        super().__init__(*args, **kwargs)
+
+    def open_dbs(self):
+        def log_reason(message, is_for_sync):
+            reason = 'sync' if is_for_sync else 'serving'
+            self.logger.info('{} for {}'.format(message, reason))
+
+        for for_sync in [False, True]:
+            if self.claims_db:
+                if self.claims_db.for_sync == for_sync:
+                    return
+                log_reason('closing claim DBs to re-open', for_sync)
+                self.claims_db.close()
+                self.names_db.close()
+                self.signatures_db.close()
+            self.claims_db = self.db_class('claims', for_sync)
+            self.names_db = self.db_class('names', for_sync)
+            self.signatures_db = self.db_class('signatures', for_sync)
+            log_reason('opened claim DBs', self.claims_db.for_sync)
+        return super().open_dbs()
 
     def flush_utxos(self, batch):
         # TODO: flush claim caches
         return super().flush_utxos(batch)
 
     def advance_txs(self, txs):
+        # TODO: generate claim undo info!
         undo_info = super().advance_txs(txs)
         height = self.height + 1
         for tx, txid in txs:
