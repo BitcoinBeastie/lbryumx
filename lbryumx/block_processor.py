@@ -1,12 +1,13 @@
 import hashlib
 import struct
+import time
 from binascii import hexlify
 
 from electrumx.server.block_processor import BlockProcessor
 from lbryschema.decode import smart_decode
 from lbryschema.uri import parse_lbry_uri
 
-from lbryumx.model import NameClaim, ClaimUpdate, ClaimSupport
+from lbryumx.model import NameClaim, ClaimInfo
 
 
 class LBRYBlockProcessor(BlockProcessor):
@@ -19,6 +20,7 @@ class LBRYBlockProcessor(BlockProcessor):
         super().__init__(*args, **kwargs)
 
     def open_dbs(self):
+        return super().open_dbs()
         def log_reason(message, is_for_sync):
             reason = 'sync' if is_for_sync else 'serving'
             self.logger.info('{} for {}'.format(message, reason))
@@ -35,11 +37,26 @@ class LBRYBlockProcessor(BlockProcessor):
             self.names_db = self.db_class('names', for_sync)
             self.signatures_db = self.db_class('signatures', for_sync)
             log_reason('opened claim DBs', self.claims_db.for_sync)
-        return super().open_dbs()
 
-    def flush_utxos(self, batch):
-        # TODO: flush claim caches
-        return super().flush_utxos(batch)
+    def flush_utxos(self, utxo_batch):
+        # flush claims together with utxos as they are parsed together
+        # TODO: flush names and signatures caches
+        with self.utxo_db.write_batch() as claims_batch:
+            self.flush_claims(claims_batch)
+        return super().flush_utxos(utxo_batch)
+
+    def flush_claims(self, batch):
+        flush_start = time.time()
+        write = batch.put
+        for key, claim in self.claim_cache.items():
+            write(key, claim)
+        if self.utxo_db.for_sync:
+            self.logger.info('flushed {:,d} blocks with {:,d} claims '
+                             'added, {:,d} deleted in {:.1f}s, committing...'
+                             .format(self.height - self.db_height,
+                                     len(self.claim_cache), 0,
+                                     time.time() - flush_start))
+        self.claim_cache = {}
 
     def advance_txs(self, txs):
         # TODO: generate claim undo info!
@@ -63,7 +80,7 @@ class LBRYBlockProcessor(BlockProcessor):
             self.claims_signed_by_cert_cache.setdefault(cert_id, []).append(claim_id)
         except Exception:
             pass
-        self.claim_cache[claim_id] = (name, value, address, height, cert_id,)
+        self.claim_cache[claim_id] = ClaimInfo(name, value, address, height, cert_id).serialized
 
         claims_for_name = self.claims_for_name_cache.get(name, {}).values()
         self.claims_for_name_cache.setdefault(name, {})[claim_id] = max(claims_for_name or [0]) + 1
