@@ -15,6 +15,7 @@ class LBRYBlockProcessor(BlockProcessor):
         super().__init__(*args, **kwargs)
         self.claim_cache = {}
         self.claims_for_name_cache = {}
+        self.claims_signed_by_cert_cache = {}
 
     def flush_utxos(self, batch):
         # TODO: flush claim caches
@@ -38,13 +39,13 @@ class LBRYBlockProcessor(BlockProcessor):
         try:
             parse_lbry_uri(name)  # skip invalid names
             cert_id = smart_decode(value).certificate_id
+            self.claims_signed_by_cert_cache.setdefault(cert_id, []).append(claim_id)
         except Exception:
             pass
         self.claim_cache[claim_id] = (name, value, address, height, cert_id,)
 
         claims_for_name = self.claims_for_name_cache.get(name, {}).values()
         self.claims_for_name_cache.setdefault(name, {})[claim_id] = max(claims_for_name or [0]) + 1
-        # TODO: add cert_id->[signatures,]
 
 
 def claim_id_hash(txid, n):
