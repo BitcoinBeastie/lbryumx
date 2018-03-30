@@ -70,6 +70,21 @@ def test_signed_claim_info_import(block_processor):
     assert_claim_info_equal(signed_cert_claim_info, expected_signed_claim_info)
 
 
+def test_claim_sequence_incremented_on_claim_name(block_processor):
+    address = 'bTZito1AqWPig64GBioom11mHpoegMfXHx'
+    claim_ids = []
+    for idx in range(1, 3):
+        name, value = b'ordered_claims', "I'm the number {:,d}".format(idx).encode()
+        output = create_claim_output(address, name, value)
+        height, txid, nout = 42, str(idx).encode(), idx
+        block_processor.advance_claim_name_transaction(output, height, txid, nout)
+        claim_id = claim_id_hash(txid, nout)
+        claim_ids.append(claim_id)
+
+    for idx, claim_id in enumerate(claim_ids, start=1):
+        assert block_processor.get_claims_for_name(name)[claim_id] == idx
+
+
 def create_cert():
     private_key = get_signer(SECP256k1).generate().private_key.to_pem()
     certificate = ClaimDict.generate_certificate(private_key, curve=SECP256k1)
