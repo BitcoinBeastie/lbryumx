@@ -14,6 +14,7 @@ def block_infos():
     block_data_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data')
     blocks = {}
     for block_file_name in os.listdir(block_data_path):
+        if not block_file_name.startswith('block'): continue
         number = block_file_name.split('_')[1].replace('.json', '')
         block_file_path = os.path.join(block_data_path, block_file_name)
         with open(block_file_path, 'r') as block_file:
