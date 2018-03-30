@@ -16,6 +16,7 @@ def block_info():
     with open(block_file_path, 'r') as block_file:
         return json.loads(block_file.read())
 
+
 def test_block(block_info):
     # From electrumx test_block
     coin = LBC
@@ -29,13 +30,14 @@ def test_block(block_info):
     for n, (tx, txid) in enumerate(block.transactions):
         assert txid == hex_str_to_hash(block_info['tx'][n])
 
+
 def test_tx_parser_handles_name_claims(block_info):
     raw_block = unhexlify(block_info['block'])
     txs = LBC.DESERIALIZER(raw_block, start=LBC.BASIC_HEADER_SIZE).read_tx_block()
-    claim = None
     for tx, _ in txs:
-        for output in tx.outputs:
-            claim = output.claim if output.claim else claim
-    assert claim
+        if tx.has_claims:
+            for output in tx.outputs:
+                claim = output.claim if output.claim else claim
+    assert claim and isinstance(claim, NameClaim)
     assert claim.name.decode() in block_info['claims']
     assert claim.value == unhexlify(block_info['claims'][claim.name.decode()])
