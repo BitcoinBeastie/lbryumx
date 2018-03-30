@@ -1,0 +1,2 @@
+git+https://github.com/lbryio/electrumx.git@packages#egg=electrumx
+git+https://github.com/lbryio/lbryschema.git@tox#egg=lbryschema
