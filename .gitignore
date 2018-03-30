@@ -9,3 +9,6 @@ docs/_build
 /build
 /dist
 /lbryumx.egg-info
+.eggs/
+.idea/
+.pytest_cache/
