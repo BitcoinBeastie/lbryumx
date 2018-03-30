@@ -1,11 +1,5 @@
-from os import environ
-
-from electrumx.server.storage import Storage
-
-import pytest
 from lbryschema.decode import smart_decode
 from lbryschema.schema import SECP256k1
-from electrumx.server.env import Env
 from lbryschema.claim import ClaimDict
 from lbryschema.signer import get_signer
 
@@ -14,20 +8,6 @@ from lbryumx.coin import LBC
 from lbryumx.model import NameClaim, TxClaimOutput, ClaimInfo
 
 from .data import claim_data
-
-
-@pytest.fixture()
-def block_processor(tmpdir_factory):
-    environ.clear()
-    environ['DB_DIRECTORY'] = tmpdir_factory.mktemp('db', numbered=True).strpath
-    environ['DAEMON_URL'] = ''
-    env = Env(LBC)
-    bp = LBC.BLOCK_PROCESSOR(env, None, None)
-    yield bp
-    for attr in dir(bp):  # hack to close dbs on tear down
-        obj = getattr(bp, attr)
-        if isinstance(obj, Storage):
-            obj.close()
 
 
 def test_simple_claim_info_import(block_processor):

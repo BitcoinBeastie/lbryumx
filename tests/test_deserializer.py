@@ -1,25 +1,9 @@
-import json
-import os
 from binascii import unhexlify, hexlify
 
-import pytest
 from electrumx.lib.hash import hex_str_to_hash
 
 from lbryumx.coin import LBC
 from lbryumx.model import NameClaim, ClaimUpdate
-
-
-@pytest.fixture('module')
-def block_infos():
-    block_data_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data')
-    blocks = {}
-    for block_file_name in os.listdir(block_data_path):
-        if not block_file_name.startswith('block'): continue
-        number = block_file_name.split('_')[1].replace('.json', '')
-        block_file_path = os.path.join(block_data_path, block_file_name)
-        with open(block_file_path, 'r') as block_file:
-            blocks[number] = json.loads(block_file.read())
-    return blocks
 
 
 def test_block(block_infos):
