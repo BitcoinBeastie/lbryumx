@@ -38,27 +38,30 @@ def test_block(block_infos):
 
 def test_tx_parser_handles_name_claims(block_infos):
     block_info = block_infos['342930']
-    raw_block = unhexlify(block_info['block'])
-    txs = LBC.DESERIALIZER(raw_block, start=LBC.BASIC_HEADER_SIZE).read_tx_block()
-    for tx, _ in txs:
-        if tx.has_claims:
-            for output in tx.outputs:
-                claim = output.claim if output.claim else claim
-    assert claim and isinstance(claim, NameClaim)
+    claims = _filter_tx_output_claims_by_type(block_info, NameClaim)
+    assert len(claims) == 1
+    claim = claims[0]
     assert claim.name.decode() in block_info['claims']
     assert claim.value == unhexlify(block_info['claims'][claim.name.decode()])
 
 
 def test_tx_parser_handles_update_claims(block_infos):
     block_info = block_infos['342259']
-    raw_block = unhexlify(block_info['block'])
-    txs = LBC.DESERIALIZER(raw_block, start=LBC.BASIC_HEADER_SIZE).read_tx_block()
-    for tx, _ in txs:
-        if tx.has_claims:
-            for output in tx.outputs:
-                claim = output.claim if output.claim else claim
-    assert claim and isinstance(claim, ClaimUpdate)
+    claims = _filter_tx_output_claims_by_type(block_info, ClaimUpdate)
+    assert len(claims) == 1
+    claim = claims[0]
     update_info = block_info['claim_updates'][hexlify(claim.claim_id[::-1]).decode()]
     expected_claim_name, expected_claim_value = update_info[0], unhexlify(update_info[1])
     assert claim.name.decode() == expected_claim_name
     assert claim.value == expected_claim_value
+
+
+def _filter_tx_output_claims_by_type(block_info, claim_type):
+    raw_block = unhexlify(block_info['block'])
+    txs = LBC.DESERIALIZER(raw_block, start=LBC.BASIC_HEADER_SIZE).read_tx_block()
+    claims = []
+    for tx, _ in txs:
+        if tx.has_claims:
+            for output in tx.outputs:
+                if isinstance(output.claim, claim_type): claims.append(output.claim)
+    return claims
