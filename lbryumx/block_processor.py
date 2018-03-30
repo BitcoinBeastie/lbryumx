@@ -25,6 +25,7 @@ class LBRYBlockProcessor(BlockProcessor):
         self.pending_abandons = {}
 
     def open_dbs(self):
+        super().open_dbs()
         def log_reason(message, is_for_sync):
             reason = 'sync' if is_for_sync else 'serving'
             self.logger.info('{} for {}'.format(message, reason))
@@ -43,7 +44,6 @@ class LBRYBlockProcessor(BlockProcessor):
             self.signatures_db = self.db_class('signatures', for_sync)
             self.outpoint_to_claim_id_db = self.db_class('outpoint_claim_id', for_sync)
             log_reason('opened claim DBs', self.claims_db.for_sync)
-        super().open_dbs()
 
     def flush_utxos(self, utxo_batch):
         # flush claims together with utxos as they are parsed together
@@ -119,14 +119,15 @@ class LBRYBlockProcessor(BlockProcessor):
                 for index, output in enumerate(tx.outputs):
                     claim = output.claim
                     if isinstance(claim, NameClaim):
-                        claim_id = claim_id_hash(txid, index)
-                        self.advance_claim_name_transaction(output, height, claim_id, txid, index, output.value)
+                        self.advance_claim_name_transaction(output, height, txid, index)
                     if isinstance(claim, ClaimUpdate):
                         # TODO: updates removes their abandons
                         pass
         return undo_info
 
-    def advance_claim_name_transaction(self, output, height, claim_id, txid, nout, amount):
+    def advance_claim_name_transaction(self, output, height, txid, nout):
+        claim_id = claim_id_hash(txid, nout)
+        amount = output.value
         address = self.coin.address_from_script(output.pk_script)
         name, value, cert_id = output.claim.name, output.claim.value, None
         try:
