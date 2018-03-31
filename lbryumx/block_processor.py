@@ -180,8 +180,7 @@ class LBRYBlockProcessor(BlockProcessor):
         self.claims_signed_by_cert_cache[cert_id] = self.get_signed_claim_id_by_cert_id(cert_id) + (claim_id,)
 
     def remove_certificate(self, cert_id):
-        if cert_id in self.get_signed_claim_id_by_cert_id(cert_id):
-            self.claims_signed_by_cert_cache[cert_id] = tuple()
+        self.claims_signed_by_cert_cache[cert_id] = tuple()
 
     def remove_claim_from_certificate_claims(self, cert_id, claim_id):
         certs = self.get_signed_claim_id_by_cert_id(cert_id)

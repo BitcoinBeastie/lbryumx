@@ -17,6 +17,14 @@ def test_cert_to_claims_storage(block_processor):
     assert db.get_signed_claim_id_by_cert_id(b'certificate_id') == (b'claim_id1',)
 
 
+def test_cert_to_claims_storage_removal_of_certificate(block_processor):
+    db = block_processor
+    db.put_claim_id_signed_by_cert_id(b'certificate_id', b'claim_id1')
+    db.put_claim_id_signed_by_cert_id(b'certificate_id', b'claim_id2')
+    db.remove_certificate(b'certificate_id')
+    assert db.get_signed_claim_id_by_cert_id(b'certificate_id') == ()
+
+
 def test_cert_to_claims_storage_removal_of_claim_id(block_processor):
     db = block_processor
     db.put_claim_id_signed_by_cert_id(b'certificate_id', b'claim_id1')
