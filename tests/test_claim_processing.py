@@ -35,7 +35,7 @@ def test_signed_claim_info_import(block_processor):
     signed_claim_name = b'signed-claim'
     signed_claim_txid = b'signed_txid'
     signed_claim_out = create_claim_output(address, signed_claim_name, claim_data.test_claim_dict,
-                                           sign=(cert, privkey), cert_id=cert_claim_id)
+                                           key=privkey, cert_id=cert_claim_id)
     signed_claim_id = claim_id_hash(signed_claim_txid, nout)
     block_processor.advance_claim_name_transaction(signed_claim_out, height, signed_claim_txid, nout)
 
@@ -71,14 +71,14 @@ def create_cert():
     return certificate, private_key
 
 
-def sign_claim(cert_claim, private_key, raw_claim, address, claim_id):
+def sign_claim(private_key, raw_claim, address, claim_id):
     claim = smart_decode(raw_claim)
     return claim.sign(private_key, address, claim_id, curve=SECP256k1)
 
 
-def create_claim_output(address, name, value, sign=None, cert_id=None):
-    if sign and cert_id:
-        value = sign_claim(sign[0], sign[1], value, address, cert_id).serialized
+def create_claim_output(address, name, value, key=None, cert_id=None):
+    if key and cert_id:
+        value = sign_claim(key, value, address, cert_id).serialized
     pk_script = LBC.pay_to_address_script(address)
     return TxClaimOutput(value=10, pk_script=pk_script, claim=NameClaim(name=name, value=value))
 
