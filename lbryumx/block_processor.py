@@ -17,6 +17,7 @@ class LBRYBlockProcessor(BlockProcessor):
 
     def __init__(self, *args, **kwargs):
         self.claim_cache = {}
+        self.supports_cache = {}
         self.claims_for_name_cache = {}
         self.claims_signed_by_cert_cache = {}
         self.outpoint_to_claim_id_cache = {}
@@ -72,8 +73,8 @@ class LBRYBlockProcessor(BlockProcessor):
             if claim_id in self.claim_cache:
                 del self.claim_cache[claim_id]
             delete_claim(claim_id)
-            for tx_hash, tx_id in outpoints:
-                outpoint = tx_hash + struct.pack('>I', tx_id)
+            for txid, tx_index in outpoints:
+                outpoint = txid + struct.pack('>I', tx_index)
                 if outpoint in self.outpoint_to_claim_id_cache:
                     del self.outpoint_to_claim_id_cache[outpoint]
                 delete_outpoint(outpoint)
@@ -100,6 +101,7 @@ class LBRYBlockProcessor(BlockProcessor):
                                      len(self.claims_signed_by_cert_cache), len(self.pending_abandons),
                                      time.time() - flush_start))
         self.claim_cache = {}
+        self.supports_cache = {}
         self.claims_for_name_cache = {}
         self.claims_signed_by_cert_cache = {}
         self.outpoint_to_claim_id_cache = {}
@@ -108,6 +110,7 @@ class LBRYBlockProcessor(BlockProcessor):
     def assert_flushed(self):
         super().assert_flushed()
         assert not self.claim_cache
+        assert not self.supports_cache
         assert not self.claims_for_name_cache
         assert not self.claims_signed_by_cert_cache
         assert not self.outpoint_to_claim_id_cache
@@ -139,7 +142,7 @@ class LBRYBlockProcessor(BlockProcessor):
             outpoint = (old_claim_info.txid, old_claim_info.nout,)
             self.pending_abandons[claim_id].remove(outpoint)
         claim_info = self.claim_info_from_output(output, txid, nout, height)
-        self.claim_cache[claim_id] = claim_info.serialized
+        self.put_claim_info(claim_id, claim_info)
         self.put_claim_id_for_outpoint(txid, nout, claim_id)
 
     def advance_claim_name_transaction(self, output, height, txid, nout):
@@ -147,7 +150,7 @@ class LBRYBlockProcessor(BlockProcessor):
         claim_info = self.claim_info_from_output(output, txid, nout, height)
         if claim_info.cert_id:
             self.put_claim_id_signed_by_cert_id(claim_info.cert_id, claim_id)
-        self.claim_cache[claim_id] = claim_info.serialized
+        self.put_claim_info(claim_id, claim_info)
         self.put_claim_for_name(claim_info.name, claim_id)
         self.put_claim_id_for_outpoint(txid, nout, claim_id)
 
@@ -164,10 +167,9 @@ class LBRYBlockProcessor(BlockProcessor):
 
     def is_update_valid(self, claim, inputs):
         claim_id = claim.claim_id
-        claim_info = self.claim_cache.get(claim_id)
+        claim_info = self.get_claim_info(claim_id)
         if not claim_info:
             return False
-        claim_info = ClaimInfo.from_serialized(claim_info)
         for input in inputs:
             if input.prev_hash == claim_info.txid and input.prev_idx == claim_info.nout:
                 return True
@@ -212,7 +214,7 @@ class LBRYBlockProcessor(BlockProcessor):
     def get_signed_claim_id_by_cert_id(self, cert_id):
         if cert_id in self.claims_signed_by_cert_cache: return self.claims_signed_by_cert_cache[cert_id]
         db_claims = self.signatures_db.get(cert_id)
-        return msgpack.loads(db_claims) if db_claims else tuple()
+        return msgpack.loads(db_claims, use_list=False) if db_claims else tuple()
 
     def put_claim_id_signed_by_cert_id(self, cert_id, claim_id):
         self.claims_signed_by_cert_cache[cert_id] = self.get_signed_claim_id_by_cert_id(cert_id) + (claim_id,)
@@ -232,6 +234,29 @@ class LBRYBlockProcessor(BlockProcessor):
     def put_claim_info(self, claim_id, claim_info):
         self.claim_cache[claim_id] = claim_info.serialized
 
+    def get_supported_claim_name_id_from_outpoint(self, txid, nout):
+        outpoint = txid + struct.pack('>I', nout)
+        return self.supports_cache.get(outpoint)
+
+    def get_supports_for_name(self, name):
+        return self.supports_cache.get(name)
+
+    def put_support(self, name, claim_id, txid, nout, height, amount):
+        self.supports_cache.setdefault(name, {}).setdefault(claim_id, []).append((txid, nout, height, amount))
+        outpoint = txid + struct.pack('>I', nout)
+        self.supports_cache[outpoint] = (name, claim_id,)
+
+    def remove_support_outpoint(self, txid, nout):
+        outpoint = txid + struct.pack('>I', nout)
+        supported = self.get_supported_claim_name_id_from_outpoint(txid, nout)
+        if supported:
+            name, claim_id = supported
+            self.supports_cache[outpoint] = None
+
+            def non_matching(support):
+                existing_txid, existing_nout = support[:2]
+                return existing_txid != txid and existing_nout != nout
+            self.supports_cache[name][claim_id] = list(filter(non_matching, self.supports_cache[name][claim_id]))
 
 def claim_id_hash(txid, n):
     # TODO: This should be in lbryschema
