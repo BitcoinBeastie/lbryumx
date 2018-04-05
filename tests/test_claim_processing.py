@@ -1,3 +1,5 @@
+from electrumx.lib.hash import hash_to_str
+from electrumx.lib.tx import TxInput
 from lbryschema.decode import smart_decode
 from lbryschema.schema import SECP256k1
 from lbryschema.claim import ClaimDict
@@ -5,7 +7,7 @@ from lbryschema.signer import get_signer
 
 from lbryumx.block_processor import claim_id_hash
 from lbryumx.coin import LBC
-from lbryumx.model import NameClaim, TxClaimOutput, ClaimInfo
+from lbryumx.model import NameClaim, TxClaimOutput, ClaimInfo, ClaimUpdate
 
 from .data import claim_data
 
@@ -46,7 +48,8 @@ def test_signed_claim_info_import(block_processor):
 
     signed_cert_claim_info = block_processor.get_claim_info(signed_claim_id)
     expected_signed_claim_info = ClaimInfo(signed_claim_name, signed_claim_out.claim.value, signed_claim_txid, nout,
-                                           signed_claim_out.value, address.encode(), height, cert_id=cert_claim_id)
+                                           signed_claim_out.value, address.encode(), height,
+                                           cert_id=hash_to_str(cert_claim_id).encode())
     assert_claim_info_equal(signed_cert_claim_info, expected_signed_claim_info)
 
 
@@ -64,6 +67,17 @@ def test_claim_sequence_incremented_on_claim_name(block_processor):
     for idx, claim_id in enumerate(claim_ids, start=1):
         assert block_processor.get_claims_for_name(name)[claim_id] == idx
 
+def test_claim_update_validator(block_processor):
+    claim_id = claim_id_hash(b'claimtx', 42)
+    prev_hash, prev_idx = b'previous_claim_txid', 42
+    input = TxInput(prev_hash, prev_idx, b'script', 1)
+    claim = ClaimUpdate(b'name', claim_id, b'new value')
+    assert not block_processor.is_update_valid(claim, [input])
+
+    block_processor.put_claim_info(claim_id, ClaimInfo(b'name', b'value', prev_hash, prev_idx, 20, b'address', 1, None))
+
+    assert block_processor.is_update_valid(claim, [input])
+
 
 def create_cert():
     private_key = get_signer(SECP256k1).generate().private_key.to_pem()
@@ -73,7 +87,7 @@ def create_cert():
 
 def sign_claim(private_key, raw_claim, address, claim_id):
     claim = smart_decode(raw_claim)
-    return claim.sign(private_key, address, claim_id, curve=SECP256k1)
+    return claim.sign(private_key, address, hash_to_str(claim_id), curve=SECP256k1)
 
 
 def create_claim_output(address, name, value, key=None, cert_id=None):

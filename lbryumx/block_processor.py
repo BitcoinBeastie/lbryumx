@@ -1,8 +1,10 @@
 import hashlib
 import struct
 import time
-from binascii import hexlify
+from typing import Tuple
+
 import msgpack
+from electrumx.lib.hash import hash_to_str
 
 from electrumx.server.block_processor import BlockProcessor
 from lbryschema.decode import smart_decode
@@ -61,6 +63,7 @@ class LBRYBlockProcessor(BlockProcessor):
         delete_claim, delete_outpoint, delete_name = batch.delete, outpoint_batch.delete, names_batch.delete
         delete_cert = signed_claims_batch.delete
         for claim_id, outpoints in self.pending_abandons.items():
+            if not outpoints: continue
             claim = self.get_claim_info(claim_id)
             self.remove_claim_for_name(claim.name, claim_id)
             if claim.cert_id:
@@ -121,33 +124,68 @@ class LBRYBlockProcessor(BlockProcessor):
                     if isinstance(claim, NameClaim):
                         self.advance_claim_name_transaction(output, height, txid, index)
                     if isinstance(claim, ClaimUpdate):
+                        if self.is_update_valid(claim, tx.inputs):
+                            self.update_claim(output, height, txid, index)
+                        else:
+                            info = (hash_to_str(txid), hash_to_str(claim.claim_id),)
+                            self.log_error("REJECTED: {} updating {}".format(*info))
                         # TODO: updates removes their abandons
-                        pass
         return undo_info
+
+    def update_claim(self, output, height, txid, nout):
+        claim_id = output.claim.claim_id
+        if self.pending_abandons.get(claim_id):
+            old_claim_info = self.get_claim_info(claim_id)
+            outpoint = (old_claim_info.txid, old_claim_info.nout,)
+            self.pending_abandons[claim_id].remove(outpoint)
+        claim_info = self.claim_info_from_output(output, txid, nout, height)
+        self.claim_cache[claim_id] = claim_info.serialized
+        self.put_claim_id_for_outpoint(txid, nout, claim_id)
 
     def advance_claim_name_transaction(self, output, height, txid, nout):
         claim_id = claim_id_hash(txid, nout)
+        claim_info = self.claim_info_from_output(output, txid, nout, height)
+        if claim_info.cert_id:
+            self.put_claim_id_signed_by_cert_id(claim_info.cert_id, claim_id)
+        self.claim_cache[claim_id] = claim_info.serialized
+        self.put_claim_for_name(claim_info.name, claim_id)
+        self.put_claim_id_for_outpoint(txid, nout, claim_id)
+
+    def claim_info_from_output(self, output, txid, nout, height):
         amount = output.value
         address = self.coin.address_from_script(output.pk_script)
         name, value, cert_id = output.claim.name, output.claim.value, None
         try:
             parse_lbry_uri(name.decode())  # skip invalid names
             cert_id = smart_decode(value).certificate_id
-            if cert_id:
-                self.put_claim_id_signed_by_cert_id(cert_id, claim_id)
         except Exception:
             pass
-        self.claim_cache[claim_id] = ClaimInfo(name, value, txid, nout, amount, address, height, cert_id).serialized
-        self.put_claim_for_name(name, claim_id)
-        self.outpoint_to_claim_id_cache[txid + struct.pack('>I', nout)] = claim_id
+        return ClaimInfo(name, value, txid, nout, amount, address, height, cert_id)
+
+    def is_update_valid(self, claim, inputs):
+        claim_id = claim.claim_id
+        claim_info = self.claim_cache.get(claim_id)
+        if not claim_info:
+            return False
+        claim_info = ClaimInfo.from_serialized(claim_info)
+        for input in inputs:
+            if input.prev_hash == claim_info.txid and input.prev_idx == claim_info.nout:
+                return True
+        return False
 
     def spend_utxo(self, tx_hash, tx_idx):
         # gather pending abandons during the spend of a utxo
         result = super().spend_utxo(tx_hash, tx_idx)
+        self.abandon_spent(tx_hash, tx_idx)
+        return result
+
+    def abandon_spent(self, tx_hash, tx_idx):
         claim_id = self.get_claim_id_from_outpoint(tx_hash, tx_idx)
         if claim_id:
             self.pending_abandons.setdefault(claim_id, []).append((tx_hash, tx_idx,))
-        return result
+
+    def put_claim_id_for_outpoint(self, tx_hash, tx_idx, claim_id):
+        self.outpoint_to_claim_id_cache[tx_hash + struct.pack('>I', tx_idx)] = claim_id
 
     def get_claim_id_from_outpoint(self, tx_hash, tx_idx):
         key = tx_hash + struct.pack('>I', tx_idx)
@@ -191,6 +229,8 @@ class LBRYBlockProcessor(BlockProcessor):
         serialized = self.claim_cache.get(claim_id) or self.claims_db.get(claim_id)
         return ClaimInfo.from_serialized(serialized) if serialized else None
 
+    def put_claim_info(self, claim_id, claim_info):
+        self.claim_cache[claim_id] = claim_info.serialized
 
 
 def claim_id_hash(txid, n):
@@ -198,4 +238,4 @@ def claim_id_hash(txid, n):
     packed = txid + struct.pack('>I', n)
     md = hashlib.new('ripemd160')
     md.update(hashlib.sha256(packed).digest())
-    return hexlify(md.digest()[::-1])
+    return md.digest()
