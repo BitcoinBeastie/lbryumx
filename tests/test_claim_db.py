@@ -1,3 +1,4 @@
+import json
 from binascii import hexlify
 
 from electrumx.lib.hash import hash_to_str
@@ -129,5 +130,6 @@ def test_stratum_formatted_get_claim_info(block_processor):
         'supports': [[hash_to_str(b'othertxid'), 12, 1200]],
         'txid': hash_to_str(txid),
         'valid_at_height': 10,
-        'value': hexlify(b'value')
+        'value': hexlify(b'value').decode('ISO-8859-1')
     }
+    json.dumps(db.get_stratum_claim_info_from_raw_claim_id(claim_id))

@@ -83,14 +83,14 @@ def test_claim_update_validator(block_processor):
 def test_claim_support_import(block_processor):
     assert not block_processor.get_supports_for_name(b'name')
     txid, nout, height, amount = b'txid', 32, 44, 324234
-    block_processor.advance_support([], ClaimSupport(b'name', b'claim_id'), txid, nout, height, amount)
+    block_processor.advance_support(ClaimSupport(b'name', b'claim_id'), txid, nout, height, amount)
 
     assert block_processor.get_supports_for_name(b'name') == {b'claim_id': [[txid, nout, height, amount]]}
 
 
 def test_claim_support_abandon(block_processor):
     txid, nout, height, amount = b'txid', 32, 44, 324234
-    block_processor.advance_support([], ClaimSupport(b'name', b'claim_id'), txid, nout, height, amount)
+    block_processor.advance_support(ClaimSupport(b'name', b'claim_id'), txid, nout, height, amount)
     block_processor.abandon_spent(txid, nout)
 
     assert block_processor.get_supports_for_name(b'name') == {b'claim_id': []}

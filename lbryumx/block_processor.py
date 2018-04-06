@@ -27,6 +27,7 @@ class LBRYBlockProcessor(BlockProcessor):
 
         # stores deletes not yet flushed to disk
         self.pending_abandons = {}
+        self.unprocessed_spent_utxo_set = set()
 
     def open_dbs(self):
         super().open_dbs()
@@ -129,11 +130,24 @@ class LBRYBlockProcessor(BlockProcessor):
         assert not self.outpoint_to_claim_id_cache
         assert not self.pending_abandons
 
-    def advance_txs(self, txs):
+    def advance_blocks(self, blocks):
+        # save height, advance blocks as usual, then hook our claim tx processing
+        height = self.height + 1
+        super().advance_blocks(blocks)
+        for index, block in enumerate(blocks):
+            self.advance_claim_txs(block.transactions, height + index)
+        while self.unprocessed_spent_utxo_set:
+            self.abandon_spent(*self.unprocessed_spent_utxo_set.pop())
+
+    def spend_utxo(self, tx_hash, tx_idx):
+        # this is called during electrumx tx advance, we gather spents in the process to avoid looping again
+        result = super().spend_utxo(tx_hash, tx_idx)
+        self.unprocessed_spent_utxo_set.add((tx_hash, tx_idx,))
+        return result
+
+    def advance_claim_txs(self, txs, height):
         # TODO: generate claim undo info!
-        undo_info = super().advance_txs(txs)
-        # self.height is only incremented later on self.advance_blocks
-        height = (self.undo_infos[-1][1] if self.undo_infos else self.height) + 1
+        abandon_candidates = self.unprocessed_spent_utxo_set
         for tx, txid in txs:
             if tx.has_claims:
                 for index, output in enumerate(tx.outputs):
@@ -146,16 +160,11 @@ class LBRYBlockProcessor(BlockProcessor):
                         else:
                             info = (hash_to_str(txid), hash_to_str(claim.claim_id),)
                             self.log_error("REJECTED: {} updating {}".format(*info))
-                    elif isinstance(claim, ClaimSupport):
-                        self.advance_support(tx.inputs, claim, txid, index, height, output.value)
-        return undo_info
+                    elif isinstance(claim, ClaimSupport) and (txid, index,) not in abandon_candidates:
+                        self.advance_support(claim, txid, index, height, output.value)
 
     def update_claim(self, output, height, txid, nout):
         claim_id = output.claim.claim_id
-        if self.pending_abandons.get(claim_id):
-            old_claim_info = self.get_claim_info(claim_id)
-            outpoint = (old_claim_info.txid, old_claim_info.nout,)
-            self.pending_abandons[claim_id].remove(outpoint)
         claim_info = self.claim_info_from_output(output, txid, nout, height)
         self.put_claim_info(claim_id, claim_info)
         self.put_claim_id_for_outpoint(txid, nout, claim_id)
@@ -169,11 +178,8 @@ class LBRYBlockProcessor(BlockProcessor):
         self.put_claim_for_name(claim_info.name, claim_id)
         self.put_claim_id_for_outpoint(txid, nout, claim_id)
 
-    def advance_support(self, inputs, claim_support, txid, nout, height, amount):
-        for input in inputs:
-            if input.prev_hash == txid and input.prev_idx == nout:
-                # TODO: also applies to the other types. Refactor and add more tests, specially before undo code lands
-                return  # its spent, so an in-block support+abandon, which we then ignore
+    def advance_support(self, claim_support, txid, nout, height, amount):
+        # TODO: check for more controller claim rules, like takeover or ordering
         self.put_support(claim_support.name, claim_support.claim_id, txid, nout, height, amount)
 
     def claim_info_from_output(self, output, txid, nout, height):
@@ -197,12 +203,6 @@ class LBRYBlockProcessor(BlockProcessor):
             if input.prev_hash == claim_info.txid and input.prev_idx == claim_info.nout:
                 return True
         return False
-
-    def spend_utxo(self, tx_hash, tx_idx):
-        # gather pending abandons during the spend of a utxo
-        result = super().spend_utxo(tx_hash, tx_idx)
-        self.abandon_spent(tx_hash, tx_idx)
-        return result
 
     def abandon_spent(self, tx_hash, tx_idx):
         claim_id = self.get_claim_id_from_outpoint(tx_hash, tx_idx)
@@ -307,7 +307,7 @@ class LBRYBlockProcessor(BlockProcessor):
             "amount":claim_info.amount,
             "depth": self.db_height - claim_info.height,
             "height": claim_info.height,
-            "value": hexlify(claim_info.value),
+            "value": hexlify(claim_info.value).decode('ISO-8859-1'),
             "claim_sequence": sequence,
             "address": claim_info.address.decode('ISO-8859-1'),
             "supports": supports,
