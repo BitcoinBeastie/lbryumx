@@ -88,6 +88,15 @@ def test_claim_support_import(block_processor):
     assert block_processor.get_supports_for_name(b'name') == {b'claim_id': [[txid, nout, height, amount]]}
 
 
+def test_claim_support_abandon(block_processor):
+    txid, nout, height, amount = b'txid', 32, 44, 324234
+    block_processor.advance_support([], ClaimSupport(b'name', b'claim_id'), txid, nout, height, amount)
+    block_processor.abandon_spent(txid, nout)
+
+    assert block_processor.get_supports_for_name(b'name') == {b'claim_id': []}
+
+
+
 def create_cert():
     private_key = get_signer(SECP256k1).generate().private_key.to_pem()
     certificate = ClaimDict.generate_certificate(private_key, curve=SECP256k1)

@@ -138,14 +138,14 @@ class LBRYBlockProcessor(BlockProcessor):
                     claim = output.claim
                     if isinstance(claim, NameClaim):
                         self.advance_claim_name_transaction(output, height, txid, index)
-                    if isinstance(claim, ClaimUpdate):
+                    elif isinstance(claim, ClaimUpdate):
                         if self.is_update_valid(claim, tx.inputs):
                             self.update_claim(output, height, txid, index)
                         else:
                             info = (hash_to_str(txid), hash_to_str(claim.claim_id),)
                             self.log_error("REJECTED: {} updating {}".format(*info))
-                    if isinstance(claim, ClaimSupport):
-                        self.advance_support(self, tx.inputs, claim, txid, index, height, output.value)
+                    elif isinstance(claim, ClaimSupport):
+                        self.advance_support(tx.inputs, claim, txid, index, height, output.value)
         return undo_info
 
     def update_claim(self, output, height, txid, nout):
@@ -205,6 +205,7 @@ class LBRYBlockProcessor(BlockProcessor):
         claim_id = self.get_claim_id_from_outpoint(tx_hash, tx_idx)
         if claim_id:
             self.pending_abandons.setdefault(claim_id, []).append((tx_hash, tx_idx,))
+        self.remove_support_outpoint(tx_hash, tx_idx)
 
     def put_claim_id_for_outpoint(self, tx_hash, tx_idx, claim_id):
         self.outpoint_to_claim_id_cache[tx_hash + struct.pack('>I', tx_idx)] = claim_id
