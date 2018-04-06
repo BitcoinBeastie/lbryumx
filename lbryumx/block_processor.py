@@ -10,7 +10,7 @@ from electrumx.server.block_processor import BlockProcessor
 from lbryschema.decode import smart_decode
 from lbryschema.uri import parse_lbry_uri
 
-from lbryumx.model import NameClaim, ClaimInfo, ClaimUpdate
+from lbryumx.model import NameClaim, ClaimInfo, ClaimUpdate, ClaimSupport
 
 
 class LBRYBlockProcessor(BlockProcessor):
@@ -144,7 +144,8 @@ class LBRYBlockProcessor(BlockProcessor):
                         else:
                             info = (hash_to_str(txid), hash_to_str(claim.claim_id),)
                             self.log_error("REJECTED: {} updating {}".format(*info))
-                        # TODO: updates removes their abandons
+                    if isinstance(claim, ClaimSupport):
+                        self.advance_support(self, tx.inputs, claim, txid, index, height, output.value)
         return undo_info
 
     def update_claim(self, output, height, txid, nout):
@@ -165,6 +166,13 @@ class LBRYBlockProcessor(BlockProcessor):
         self.put_claim_info(claim_id, claim_info)
         self.put_claim_for_name(claim_info.name, claim_id)
         self.put_claim_id_for_outpoint(txid, nout, claim_id)
+
+    def advance_support(self, inputs, claim_support, txid, nout, height, amount):
+        for input in inputs:
+            if input.prev_hash == txid and input.prev_idx == nout:
+                # TODO: also applies to the other types. Refactor and add more tests, specially before undo code lands
+                return  # its spent, so an in-block support+abandon, which we then ignore
+        self.put_support(claim_support.name, claim_support.claim_id, txid, nout, height, amount)
 
     def claim_info_from_output(self, output, txid, nout, height):
         amount = output.value

@@ -7,7 +7,7 @@ from lbryschema.signer import get_signer
 
 from lbryumx.block_processor import claim_id_hash
 from lbryumx.coin import LBC
-from lbryumx.model import NameClaim, TxClaimOutput, ClaimInfo, ClaimUpdate
+from lbryumx.model import NameClaim, TxClaimOutput, ClaimInfo, ClaimUpdate, ClaimSupport
 
 from .data import claim_data
 
@@ -67,6 +67,7 @@ def test_claim_sequence_incremented_on_claim_name(block_processor):
     for idx, claim_id in enumerate(claim_ids, start=1):
         assert block_processor.get_claims_for_name(name)[claim_id] == idx
 
+
 def test_claim_update_validator(block_processor):
     claim_id = claim_id_hash(b'claimtx', 42)
     prev_hash, prev_idx = b'previous_claim_txid', 42
@@ -77,6 +78,14 @@ def test_claim_update_validator(block_processor):
     block_processor.put_claim_info(claim_id, ClaimInfo(b'name', b'value', prev_hash, prev_idx, 20, b'address', 1, None))
 
     assert block_processor.is_update_valid(claim, [input])
+
+
+def test_claim_support_import(block_processor):
+    assert not block_processor.get_supports_for_name(b'name')
+    txid, nout, height, amount = b'txid', 32, 44, 324234
+    block_processor.advance_support([], ClaimSupport(b'name', b'claim_id'), txid, nout, height, amount)
+
+    assert block_processor.get_supports_for_name(b'name') == {b'claim_id': [[txid, nout, height, amount]]}
 
 
 def create_cert():
