@@ -41,12 +41,22 @@ def test_tx_parser_handles_update_claims(block_infos):
     assert claim.value == expected_claim_value
 
 
+def test_handler_for_claim_script_address_extraction(block_infos):
+    block_info = block_infos['342259']
+    outputs = _filter_tx_output_by_type(block_info, ClaimUpdate)
+    assert LBC.address_from_script(outputs[0].pk_script) == 'bPNQ1zwYeeEFsCBYzQ9F4qLEHv5ZWCf8YB'
+
+
 def _filter_tx_output_claims_by_type(block_info, claim_type):
+    return [output.claim for output in _filter_tx_output_by_type(block_info, claim_type)]
+
+
+def _filter_tx_output_by_type(block_info, claim_type):
     raw_block = unhexlify(block_info['block'])
     txs = LBC.DESERIALIZER(raw_block, start=LBC.BASIC_HEADER_SIZE).read_tx_block()
-    claims = []
+    outputs = []
     for tx, _ in txs:
         if tx.has_claims:
             for output in tx.outputs:
-                if isinstance(output.claim, claim_type): claims.append(output.claim)
-    return claims
+                if isinstance(output.claim, claim_type): outputs.append(output)
+    return outputs
