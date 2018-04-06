@@ -21,7 +21,7 @@ class LBRYBlockProcessor(BlockProcessor):
         self.claims_for_name_cache = {}
         self.claims_signed_by_cert_cache = {}
         self.outpoint_to_claim_id_cache = {}
-        self.claims_db = self.names_db = self.signatures_db = self.outpoint_to_claim_id_db = None
+        self.claims_db = self.names_db = self.signatures_db = self.outpoint_to_claim_id_db = self.supports_db = None
         super().__init__(*args, **kwargs)
 
         # stores deletes not yet flushed to disk
@@ -39,10 +39,12 @@ class LBRYBlockProcessor(BlockProcessor):
                     return
                 log_reason('closing claim DBs to re-open', for_sync)
                 self.claims_db.close()
+                self.supports_db.close()
                 self.names_db.close()
                 self.signatures_db.close()
                 self.outpoint_to_claim_id_db.close()
             self.claims_db = self.db_class('claims', for_sync)
+            self.supports_db = self.db_class('supports', for_sync)
             self.names_db = self.db_class('names', for_sync)
             self.signatures_db = self.db_class('signatures', for_sync)
             self.outpoint_to_claim_id_db = self.db_class('outpoint_claim_id', for_sync)
@@ -50,19 +52,24 @@ class LBRYBlockProcessor(BlockProcessor):
 
     def flush_utxos(self, utxo_batch):
         # flush claims together with utxos as they are parsed together
+        self.batched_flush_claims()
+        return super().flush_utxos(utxo_batch)
+
+    def batched_flush_claims(self):
         with self.claims_db.write_batch() as claims_batch:
             with self.names_db.write_batch() as names_batch:
                 with self.signatures_db.write_batch() as signed_claims_batch:
                     with self.outpoint_to_claim_id_db.write_batch() as outpoint_batch:
-                        self.flush_claims(claims_batch, names_batch, signed_claims_batch, outpoint_batch)
-        return super().flush_utxos(utxo_batch)
+                        with self.supports_db.write_batch() as supports_batch:
+                            self.flush_claims(claims_batch, names_batch, signed_claims_batch,
+                                              outpoint_batch, supports_batch)
 
-    def flush_claims(self, batch, names_batch, signed_claims_batch, outpoint_batch):
+    def flush_claims(self, batch, names_batch, signed_claims_batch, outpoint_batch, supports_batch):
         flush_start = time.time()
         write_claim, write_name, write_cert = batch.put, names_batch.put, signed_claims_batch.put
-        write_outpoint = outpoint_batch.put
+        write_outpoint, write_support = outpoint_batch.put, supports_batch.put
         delete_claim, delete_outpoint, delete_name = batch.delete, outpoint_batch.delete, names_batch.delete
-        delete_cert = signed_claims_batch.delete
+        delete_cert, delete_support = signed_claims_batch.delete, supports_batch.delete
         for claim_id, outpoints in self.pending_abandons.items():
             if not outpoints: continue
             claim = self.get_claim_info(claim_id)
@@ -92,6 +99,11 @@ class LBRYBlockProcessor(BlockProcessor):
                 write_cert(cert_id, msgpack.dumps(claims))
         for key, claim_id in self.outpoint_to_claim_id_cache.items():
             write_outpoint(key, claim_id)
+        for key, value in self.supports_cache.items():
+            if value:
+                write_support(key, value)
+            else:
+                delete_support(key)
         if self.claims_db.for_sync:
             self.logger.info('flushed {:,d} blocks with {:,d} claims, {:,d} outpoints, {:,d} names '
                              'and {:,d} certificates added while {:,d} were abandoned in {:.1f}s, committing...'
@@ -236,15 +248,19 @@ class LBRYBlockProcessor(BlockProcessor):
 
     def get_supported_claim_name_id_from_outpoint(self, txid, nout):
         outpoint = txid + struct.pack('>I', nout)
-        return self.supports_cache.get(outpoint)
+        support = self.supports_cache.get(outpoint) or self.supports_db.get(outpoint)
+        return msgpack.loads(support, use_list=False) if support else None
 
     def get_supports_for_name(self, name):
-        return self.supports_cache.get(name)
+        supports = self.supports_cache.get(name) or self.supports_db.get(name)
+        return msgpack.loads(supports) if supports else None
 
     def put_support(self, name, claim_id, txid, nout, height, amount):
-        self.supports_cache.setdefault(name, {}).setdefault(claim_id, []).append((txid, nout, height, amount))
+        supports = self.get_supports_for_name(name) or {}
+        supports.setdefault(claim_id, []).append((txid, nout, height, amount))
+        self.supports_cache[name] = msgpack.dumps(supports)
         outpoint = txid + struct.pack('>I', nout)
-        self.supports_cache[outpoint] = (name, claim_id,)
+        self.supports_cache[outpoint] = msgpack.dumps((name, claim_id,))
 
     def remove_support_outpoint(self, txid, nout):
         outpoint = txid + struct.pack('>I', nout)
@@ -256,7 +272,9 @@ class LBRYBlockProcessor(BlockProcessor):
             def non_matching(support):
                 existing_txid, existing_nout = support[:2]
                 return existing_txid != txid and existing_nout != nout
-            self.supports_cache[name][claim_id] = list(filter(non_matching, self.supports_cache[name][claim_id]))
+            supports = self.get_supports_for_name(name)
+            supports[claim_id] = list(filter(non_matching, supports[claim_id]))
+            self.supports_cache[name] = msgpack.dumps(supports)
 
 def claim_id_hash(txid, n):
     # TODO: This should be in lbryschema

@@ -57,7 +57,7 @@ def test_supports_storage(block_processor):
     db.put_support(name, claim_id, txid, nout, height, amount)
 
     assert db.get_supported_claim_name_id_from_outpoint(txid, nout) == (name, claim_id,)
-    assert db.get_supports_for_name(name) == {claim_id: [(txid, nout, height, amount,)]}
+    assert db.get_supports_for_name(name) == {claim_id: [[txid, nout, height, amount]]}
 
     db.remove_support_outpoint(txid, nout)
 
@@ -69,6 +69,36 @@ def test_supports_storage(block_processor):
     db.put_support(name, b'otherclaimid', b'othertxid', nout, height, amount*4)
     db.put_support(b'othername', b'yetotherclaimid', b'yetothertxid', nout, height, amount)
 
-    assert db.get_supports_for_name(name) == {claim_id: [(txid, nout, height, amount,),
-                                                         (b'othertxid', nout*2, height*2, amount)],
-                                              b'otherclaimid': [(b'othertxid', nout, height, amount*4)]}
+    assert db.get_supports_for_name(name) == {claim_id: [[txid, nout, height, amount],
+                                                         [b'othertxid', nout*2, height*2, amount]],
+                                              b'otherclaimid': [[b'othertxid', nout, height, amount*4]]}
+
+def test_supports_cache_layer_flushes_to_disk_properly(block_processor):
+    db = block_processor
+    name = b'supportName'
+    claim_id, txid, nout, height, amount = b'claim_id', b'txid', 12, 400, 4000
+    assert not db.get_supported_claim_name_id_from_outpoint(txid, nout)
+    assert not db.get_supports_for_name(name)
+
+    db.put_support(name, claim_id, txid, nout, height, amount)
+    db.batched_flush_claims()
+
+    assert db.get_supported_claim_name_id_from_outpoint(txid, nout) == (name, claim_id,)
+    assert db.get_supports_for_name(name) == {claim_id: [[txid, nout, height, amount]]}
+
+    db.remove_support_outpoint(txid, nout)
+    db.batched_flush_claims()
+
+    assert not db.get_supported_claim_name_id_from_outpoint(txid, nout)
+    assert db.get_supports_for_name(name) == {claim_id: []}
+
+    db.put_support(name, claim_id, txid, nout, height, amount)
+    db.batched_flush_claims()
+    db.put_support(name, claim_id, b'othertxid', nout*2, height*2, amount)
+    db.put_support(name, b'otherclaimid', b'othertxid', nout, height, amount*4)
+    db.batched_flush_claims()
+    db.put_support(b'othername', b'yetotherclaimid', b'yetothertxid', nout, height, amount)
+
+    assert db.get_supports_for_name(name) == {claim_id: [[txid, nout, height, amount,],
+                                                         [b'othertxid', nout*2, height*2, amount]],
+                                              b'otherclaimid': [[b'othertxid', nout, height, amount*4]]}
