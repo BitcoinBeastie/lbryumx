@@ -1,6 +1,7 @@
 import hashlib
 import struct
 import time
+from binascii import unhexlify, hexlify
 from typing import Tuple
 
 import msgpack
@@ -131,7 +132,8 @@ class LBRYBlockProcessor(BlockProcessor):
     def advance_txs(self, txs):
         # TODO: generate claim undo info!
         undo_info = super().advance_txs(txs)
-        height = self.height + 1
+        # self.height is only incremented later on self.advance_blocks
+        height = (self.undo_infos[-1][1] if self.undo_infos else self.height) + 1
         for tx, txid in txs:
             if tx.has_claims:
                 for index, output in enumerate(tx.outputs):
@@ -183,6 +185,7 @@ class LBRYBlockProcessor(BlockProcessor):
             cert_id = smart_decode(value).certificate_id
         except Exception:
             pass
+        assert txid and address
         return ClaimInfo(name, value, txid, nout, amount, address, height, cert_id)
 
     def is_update_valid(self, claim, inputs):
@@ -262,10 +265,10 @@ class LBRYBlockProcessor(BlockProcessor):
 
     def get_supports_for_name(self, name):
         supports = self.supports_cache.get(name) or self.supports_db.get(name)
-        return msgpack.loads(supports) if supports else None
+        return msgpack.loads(supports) if supports else {}
 
     def put_support(self, name, claim_id, txid, nout, height, amount):
-        supports = self.get_supports_for_name(name) or {}
+        supports = self.get_supports_for_name(name)
         supports.setdefault(claim_id, []).append((txid, nout, height, amount))
         self.supports_cache[name] = msgpack.dumps(supports)
         outpoint = txid + struct.pack('>I', nout)
@@ -284,6 +287,35 @@ class LBRYBlockProcessor(BlockProcessor):
             supports = self.get_supports_for_name(name)
             supports[claim_id] = list(filter(non_matching, supports[claim_id]))
             self.supports_cache[name] = msgpack.dumps(supports)
+
+    def get_stratum_claim_info_from_raw_claim_id(self, claim_id):
+        result = {}
+        claim_info = self.get_claim_info(claim_id)
+        if not claim_info:
+            return result
+        sequence = self.get_claims_for_name(claim_info.name)[claim_id]
+        supports, effective_amount = [], claim_info.amount
+        for support in self.get_supports_for_name(claim_info.name).get(claim_id, []):
+            txid, nout, height, amount = support
+            effective_amount += amount
+            supports.append([hash_to_str(txid), nout, amount])
+        result = {
+            "name": claim_info.name.decode('ISO-8859-1'),
+            "claim_id": hash_to_str(claim_id),
+            "txid": hash_to_str(claim_info.txid),
+            "nout": claim_info.nout,
+            "amount":claim_info.amount,
+            "depth": self.db_height - claim_info.height,
+            "height": claim_info.height,
+            "value": hexlify(claim_info.value),
+            "claim_sequence": sequence,
+            "address": claim_info.address.decode('ISO-8859-1'),
+            "supports": supports,
+            "effective_amount": effective_amount,
+            "valid_at_height": claim_info.height  # TODO calculate this properly and find a way to validate
+        }
+
+        return result
 
 def claim_id_hash(txid, n):
     # TODO: This should be in lbryschema

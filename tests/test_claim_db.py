@@ -1,3 +1,8 @@
+from binascii import hexlify
+
+from electrumx.lib.hash import hash_to_str
+
+from lbryumx.model import ClaimInfo
 
 
 def test_claim_sequence_remove_reorders(block_processor):
@@ -102,3 +107,27 @@ def test_supports_cache_layer_flushes_to_disk_properly(block_processor):
     assert db.get_supports_for_name(name) == {claim_id: [[txid, nout, height, amount,],
                                                          [b'othertxid', nout*2, height*2, amount]],
                                               b'otherclaimid': [[b'othertxid', nout, height, amount*4]]}
+
+
+def test_stratum_formatted_get_claim_info(block_processor):
+    db = block_processor
+    db.db_height = 100
+    claim_id, txid = b'a'*40, b'b'*64
+    db.put_claim_info(claim_id, ClaimInfo(b'name', b'value', txid, 12, 20, b'address', 10, None))
+    db.put_claim_for_name(b'name', claim_id)
+    db.put_support(b'name', claim_id, b'othertxid', nout=12, height=80, amount=1200)
+    assert db.get_stratum_claim_info_from_raw_claim_id(claim_id) == {
+        'address': 'address',
+        'amount': 20,
+        'claim_id': hash_to_str(claim_id),
+        'claim_sequence': 1,
+        'depth': 90,
+        'effective_amount': 20 + 1200,
+        'name': 'name',
+        'nout': 12,
+        'height': 10,
+        'supports': [[hash_to_str(b'othertxid'), 12, 1200]],
+        'txid': hash_to_str(txid),
+        'valid_at_height': 10,
+        'value': hexlify(b'value')
+    }
