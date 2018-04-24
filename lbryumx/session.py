@@ -1,4 +1,4 @@
-from binascii import unhexlify
+from binascii import unhexlify, hexlify
 
 from electrumx.server.session import ElectrumX
 import electrumx.lib.util as util
@@ -28,10 +28,29 @@ class LBRYElectrumX(ElectrumX):
             return -1
         return None
 
-    def claimtrie_getclaimbyid(self, claim_id):
+    async def claimtrie_getclaimbyid(self, claim_id):
         self.assert_claim_id(claim_id)
+        claim = self.daemon.getclaimbyid(claim_id)
         raw_claim_id = unhexlify(claim_id)[::-1]
-        return self.bp.get_stratum_claim_info_from_raw_claim_id(raw_claim_id)
+        claim_info = self.bp.get_claim_info(raw_claim_id)
+        claim = await claim
+        sequence = self.bp.get_claims_for_name(claim['name'].encode('ISO-8859-1'))[raw_claim_id]
+        result = {
+            "name": claim['name'],
+            "claim_id": claim['claimId'],
+            "txid": claim['txid'],
+            "nout": claim['n'],
+            "amount": claim['amount'],
+            "depth": self.bp.db_height - claim['height'],
+            "height": claim['height'],
+            "value": hexlify(claim['value'].encode('ISO-8859-1')).decode(),
+            "claim_sequence": sequence,  # grab from index
+            "address": claim_info.address.decode(),  # grab from index
+            "supports": claim['supports'],
+            "effective_amount": claim['effective amount'],
+            "valid_at_height": claim['valid at height']  # TODO PR into lbrycrd to include it
+        }
+        return result
 
 
     def assert_tx_hash(self, value):
