@@ -18,11 +18,10 @@ class LBRYBlockProcessor(BlockProcessor):
 
     def __init__(self, *args, **kwargs):
         self.claim_cache = {}
-        self.supports_cache = {}
         self.claims_for_name_cache = {}
         self.claims_signed_by_cert_cache = {}
         self.outpoint_to_claim_id_cache = {}
-        self.claims_db = self.names_db = self.signatures_db = self.outpoint_to_claim_id_db = self.supports_db = None
+        self.claims_db = self.names_db = self.signatures_db = self.outpoint_to_claim_id_db = None
         super().__init__(*args, **kwargs)
 
         # stores deletes not yet flushed to disk
@@ -41,12 +40,10 @@ class LBRYBlockProcessor(BlockProcessor):
                     return
                 log_reason('closing claim DBs to re-open', for_sync)
                 self.claims_db.close()
-                self.supports_db.close()
                 self.names_db.close()
                 self.signatures_db.close()
                 self.outpoint_to_claim_id_db.close()
             self.claims_db = self.db_class('claims', for_sync)
-            self.supports_db = self.db_class('supports', for_sync)
             self.names_db = self.db_class('names', for_sync)
             self.signatures_db = self.db_class('signatures', for_sync)
             self.outpoint_to_claim_id_db = self.db_class('outpoint_claim_id', for_sync)
@@ -62,16 +59,15 @@ class LBRYBlockProcessor(BlockProcessor):
             with self.names_db.write_batch() as names_batch:
                 with self.signatures_db.write_batch() as signed_claims_batch:
                     with self.outpoint_to_claim_id_db.write_batch() as outpoint_batch:
-                        with self.supports_db.write_batch() as supports_batch:
-                            self.flush_claims(claims_batch, names_batch, signed_claims_batch,
-                                              outpoint_batch, supports_batch)
+                        self.flush_claims(claims_batch, names_batch, signed_claims_batch,
+                                          outpoint_batch)
 
-    def flush_claims(self, batch, names_batch, signed_claims_batch, outpoint_batch, supports_batch):
+    def flush_claims(self, batch, names_batch, signed_claims_batch, outpoint_batch):
         flush_start = time.time()
         write_claim, write_name, write_cert = batch.put, names_batch.put, signed_claims_batch.put
-        write_outpoint, write_support = outpoint_batch.put, supports_batch.put
+        write_outpoint = outpoint_batch.put
         delete_claim, delete_outpoint, delete_name = batch.delete, outpoint_batch.delete, names_batch.delete
-        delete_cert, delete_support = signed_claims_batch.delete, supports_batch.delete
+        delete_cert = signed_claims_batch.delete
         for claim_id, outpoints in self.pending_abandons.items():
             if not outpoints: continue
             claim = self.get_claim_info(claim_id)
@@ -101,11 +97,6 @@ class LBRYBlockProcessor(BlockProcessor):
                 write_cert(cert_id, msgpack.dumps(claims))
         for key, claim_id in self.outpoint_to_claim_id_cache.items():
             write_outpoint(key, claim_id)
-        for key, value in self.supports_cache.items():
-            if value:
-                write_support(key, value)
-            else:
-                delete_support(key)
         if self.claims_db.for_sync:
             self.logger.info('flushed {:,d} blocks with {:,d} claims, {:,d} outpoints, {:,d} names '
                              'and {:,d} certificates added while {:,d} were abandoned in {:.1f}s, committing...'
@@ -115,7 +106,6 @@ class LBRYBlockProcessor(BlockProcessor):
                                      len(self.claims_signed_by_cert_cache), len(self.pending_abandons),
                                      time.time() - flush_start))
         self.claim_cache = {}
-        self.supports_cache = {}
         self.claims_for_name_cache = {}
         self.claims_signed_by_cert_cache = {}
         self.outpoint_to_claim_id_cache = {}
@@ -124,7 +114,6 @@ class LBRYBlockProcessor(BlockProcessor):
     def assert_flushed(self):
         super().assert_flushed()
         assert not self.claim_cache
-        assert not self.supports_cache
         assert not self.claims_for_name_cache
         assert not self.claims_signed_by_cert_cache
         assert not self.outpoint_to_claim_id_cache
@@ -180,7 +169,7 @@ class LBRYBlockProcessor(BlockProcessor):
 
     def advance_support(self, claim_support, txid, nout, height, amount):
         # TODO: check for more controller claim rules, like takeover or ordering
-        self.put_support(claim_support.name, claim_support.claim_id, txid, nout, height, amount)
+        pass
 
     def claim_info_from_output(self, output, txid, nout, height):
         amount = output.value
@@ -201,6 +190,7 @@ class LBRYBlockProcessor(BlockProcessor):
             return False
         for input in inputs:
             if input.prev_hash == claim_info.txid and input.prev_idx == claim_info.nout:
+                self.unprocessed_spent_utxo_set.remove((claim_info.txid, claim_info.nout))
                 return True
         return False
 
@@ -208,7 +198,6 @@ class LBRYBlockProcessor(BlockProcessor):
         claim_id = self.get_claim_id_from_outpoint(tx_hash, tx_idx)
         if claim_id:
             self.pending_abandons.setdefault(claim_id, []).append((tx_hash, tx_idx,))
-        self.remove_support_outpoint(tx_hash, tx_idx)
 
     def put_claim_id_for_outpoint(self, tx_hash, tx_idx, claim_id):
         self.outpoint_to_claim_id_cache[tx_hash + struct.pack('>I', tx_idx)] = claim_id
@@ -257,65 +246,6 @@ class LBRYBlockProcessor(BlockProcessor):
 
     def put_claim_info(self, claim_id, claim_info):
         self.claim_cache[claim_id] = claim_info.serialized
-
-    def get_supported_claim_name_id_from_outpoint(self, txid, nout):
-        outpoint = txid + struct.pack('>I', nout)
-        support = self.supports_cache.get(outpoint) or self.supports_db.get(outpoint)
-        return msgpack.loads(support, use_list=False) if support else None
-
-    def get_supports_for_name(self, name):
-        supports = self.supports_cache.get(name) or self.supports_db.get(name)
-        return msgpack.loads(supports) if supports else {}
-
-    def put_support(self, name, claim_id, txid, nout, height, amount):
-        supports = self.get_supports_for_name(name)
-        supports.setdefault(claim_id, []).append((txid, nout, height, amount))
-        self.supports_cache[name] = msgpack.dumps(supports)
-        outpoint = txid + struct.pack('>I', nout)
-        self.supports_cache[outpoint] = msgpack.dumps((name, claim_id,))
-
-    def remove_support_outpoint(self, txid, nout):
-        outpoint = txid + struct.pack('>I', nout)
-        supported = self.get_supported_claim_name_id_from_outpoint(txid, nout)
-        if supported:
-            name, claim_id = supported
-            self.supports_cache[outpoint] = None
-
-            def non_matching(support):
-                existing_txid, existing_nout = support[:2]
-                return existing_txid != txid and existing_nout != nout
-            supports = self.get_supports_for_name(name)
-            supports[claim_id] = list(filter(non_matching, supports[claim_id]))
-            self.supports_cache[name] = msgpack.dumps(supports)
-
-    def get_stratum_claim_info_from_raw_claim_id(self, claim_id):
-        result = {}
-        claim_info = self.get_claim_info(claim_id)
-        if not claim_info:
-            return result
-        sequence = self.get_claims_for_name(claim_info.name)[claim_id]
-        supports, effective_amount = [], claim_info.amount
-        for support in self.get_supports_for_name(claim_info.name).get(claim_id, []):
-            txid, nout, height, amount = support
-            effective_amount += amount
-            supports.append([hash_to_str(txid), nout, amount])
-        result = {
-            "name": claim_info.name.decode('ISO-8859-1'),
-            "claim_id": hash_to_str(claim_id),
-            "txid": hash_to_str(claim_info.txid),
-            "nout": claim_info.nout,
-            "amount":claim_info.amount,
-            "depth": self.db_height - claim_info.height,
-            "height": claim_info.height,
-            "value": hexlify(claim_info.value).decode('ISO-8859-1'),
-            "claim_sequence": sequence,
-            "address": claim_info.address.decode('ISO-8859-1'),
-            "supports": supports,
-            "effective_amount": effective_amount,
-            "valid_at_height": claim_info.height  # TODO calculate this properly and find a way to validate
-        }
-
-        return result
 
 def claim_id_hash(txid, n):
     # TODO: This should be in lbryschema
