@@ -7,11 +7,15 @@ from electrumx.lib.jsonrpc import RPCError
 
 class LBRYElectrumX(ElectrumX):
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
     def set_protocol_handlers(self, ptuple):
         super().set_protocol_handlers(ptuple)
         handlers = {
             'blockchain.transaction.get_height': self.transaction_get_height,
-            'blockchain.claimtrie.getclaimbyid': self.claimtrie_getclaimbyid
+            'blockchain.claimtrie.getclaimbyid': self.claimtrie_getclaimbyid,
+            'blockchain.claimtrie.getclaimsforname': self.claimtrie_getclaimsforname
         }
         self.electrumx_handlers.update(handlers)
 
@@ -28,30 +32,46 @@ class LBRYElectrumX(ElectrumX):
             return -1
         return None
 
-    async def claimtrie_getclaimbyid(self, claim_id):
-        self.assert_claim_id(claim_id)
-        claim = self.daemon.getclaimbyid(claim_id)
+    async def claimtrie_getclaimsforname(self, name):
+        claims = await self.daemon.getclaimsforname(name)
+        if claims:
+            claims['claims'] = [self.format_claim_from_daemon(claim, name) for claim in claims['claims']]
+            claims['supports_without_claims'] = claims['supports without claims']
+            del claims['supports without claims']
+            claims['last_takeover_height'] = claims['nLastTakeoverHeight']
+            del claims['nLastTakeoverHeight']
+            return claims
+        return {}
+
+    def format_claim_from_daemon(self, claim, name=None):
+        '''Changes the returned claim data to the format expected by lbrynet and adds missing fields.'''
+        name = name or claim['name']
+        claim_id = claim['claimId']
         raw_claim_id = unhexlify(claim_id)[::-1]
-        claim_info = self.bp.get_claim_info(raw_claim_id)
-        claim = await claim
-        sequence = self.bp.get_claims_for_name(claim['name'].encode('ISO-8859-1'))[raw_claim_id]
-        result = {
-            "name": claim['name'],
+        address = self.bp.get_claim_info(raw_claim_id).address.decode()
+        sequence = self.bp.get_claims_for_name(name.encode('ISO-8859-1'))[raw_claim_id]
+        supports = [[support['txid'], support['n'], support.get('amount') or support['nAmount']] for
+                     support in claim['supports']]
+        return {
+            "name": name,
             "claim_id": claim['claimId'],
             "txid": claim['txid'],
             "nout": claim['n'],
-            "amount": claim['amount'],
-            "depth": self.bp.db_height - claim['height'],
-            "height": claim['height'],
+            "amount": claim.get('amount') or claim['nAmount'],
+            "depth": self.bp.db_height - (claim.get('height') or claim['nHeight']),
+            "height": claim.get('height') or claim['nHeight'],
             "value": hexlify(claim['value'].encode('ISO-8859-1')).decode(),
-            "claim_sequence": sequence,  # grab from index
-            "address": claim_info.address.decode(),  # grab from index
-            "supports": claim['supports'],
-            "effective_amount": claim['effective amount'],
-            "valid_at_height": claim['valid at height']  # TODO PR into lbrycrd to include it
+            "claim_sequence": sequence,  # from index
+            "address": address,  # from index
+            "supports": supports,
+            "effective_amount": claim.get('effective amount') or claim['nEffectiveAmount'],
+            "valid_at_height": claim.get('valid at height') or claim['nValidAtHeight']  # TODO PR lbrycrd to include it
         }
-        return result
 
+    async def claimtrie_getclaimbyid(self, claim_id):
+        self.assert_claim_id(claim_id)
+        claim = await self.daemon.getclaimbyid(claim_id)
+        return self.format_claim_from_daemon(claim)
 
     def assert_tx_hash(self, value):
         '''Raise an RPCError if the value is not a valid transaction
