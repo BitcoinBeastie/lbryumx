@@ -177,7 +177,7 @@ class LBRYBlockProcessor(BlockProcessor):
         name, value, cert_id = output.claim.name, output.claim.value, None
         try:
             parse_lbry_uri(name.decode())  # skip invalid names
-            cert_id = Claim.FromString(value).publisherSignature.certificateId or None
+            cert_id = Claim.FromString(value).publisherSignature.certificateId[::-1] or None
         except Exception:
             pass
         assert txid and address

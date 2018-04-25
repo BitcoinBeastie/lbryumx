@@ -49,7 +49,7 @@ def test_signed_claim_info_import(block_processor):
     signed_cert_claim_info = block_processor.get_claim_info(signed_claim_id)
     expected_signed_claim_info = ClaimInfo(signed_claim_name, signed_claim_out.claim.value, signed_claim_txid, nout,
                                            signed_claim_out.value, address.encode(), height,
-                                           cert_id=hash_to_str(cert_claim_id).encode())
+                                           cert_id=cert_claim_id)
     assert_claim_info_equal(signed_cert_claim_info, expected_signed_claim_info)
 
 
@@ -73,27 +73,12 @@ def test_claim_update_validator(block_processor):
     prev_hash, prev_idx = b'previous_claim_txid', 42
     input = TxInput(prev_hash, prev_idx, b'script', 1)
     claim = ClaimUpdate(b'name', claim_id, b'new value')
+    block_processor.unprocessed_spent_utxo_set.add((prev_hash, prev_idx,))
     assert not block_processor.is_update_valid(claim, [input])
 
     block_processor.put_claim_info(claim_id, ClaimInfo(b'name', b'value', prev_hash, prev_idx, 20, b'address', 1, None))
 
     assert block_processor.is_update_valid(claim, [input])
-
-
-def test_claim_support_import(block_processor):
-    assert not block_processor.get_supports_for_name(b'name')
-    txid, nout, height, amount = b'txid', 32, 44, 324234
-    block_processor.advance_support(ClaimSupport(b'name', b'claim_id'), txid, nout, height, amount)
-
-    assert block_processor.get_supports_for_name(b'name') == {b'claim_id': [[txid, nout, height, amount]]}
-
-
-def test_claim_support_abandon(block_processor):
-    txid, nout, height, amount = b'txid', 32, 44, 324234
-    block_processor.advance_support(ClaimSupport(b'name', b'claim_id'), txid, nout, height, amount)
-    block_processor.abandon_spent(txid, nout)
-
-    assert block_processor.get_supports_for_name(b'name') == {b'claim_id': []}
 
 
 
