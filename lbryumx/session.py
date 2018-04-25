@@ -16,7 +16,8 @@ class LBRYElectrumX(ElectrumX):
             'blockchain.transaction.get_height': self.transaction_get_height,
             'blockchain.claimtrie.getclaimbyid': self.claimtrie_getclaimbyid,
             'blockchain.claimtrie.getclaimsforname': self.claimtrie_getclaimsforname,
-            'blockchain.claimtrie.getclaimsbyids': self.claimtrie_getclaimsbyids
+            'blockchain.claimtrie.getclaimsbyids': self.claimtrie_getclaimsbyids,
+            'blockchain.claimtrie.getclaimsintx': self.claimtrie_getclaimsintx
         }
         self.electrumx_handlers.update(handlers)
 
@@ -31,6 +32,13 @@ class LBRYElectrumX(ElectrumX):
         elif transaction_info and 'hex' in transaction_info:
             return -1
         return None
+
+    async def claimtrie_getclaimsintx(self, txid):
+        # TODO: this needs further discussion.
+        # Code on lbryum-server is wrong and we need to gather what we clearly expect from this command
+        claim_ids = [claim['claimId'] for claim in (await self.daemon.getclaimsfortx(txid)) if 'claimId' in claim]
+        claims = await self.daemon.getclaimsbyids(claim_ids)
+        return list(map(self.format_claim_from_daemon, claims))
 
     async def claimtrie_getclaimsforname(self, name):
         claims = await self.daemon.getclaimsforname(name)
