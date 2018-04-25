@@ -20,7 +20,7 @@ def test_cert_to_claims_storage(block_processor):
     db = block_processor
     db.put_claim_id_signed_by_cert_id(b'certificate_id', b'claim_id1')
     db.put_claim_id_signed_by_cert_id(b'certificate_id2', b'claim_id2')
-    assert db.get_signed_claim_id_by_cert_id(b'certificate_id') == [b'claim_id1']
+    assert db.get_signed_claim_ids_by_cert_id(b'certificate_id') == [b'claim_id1']
 
 
 def test_cert_to_claims_storage_removal_of_certificate(block_processor):
@@ -28,7 +28,7 @@ def test_cert_to_claims_storage_removal_of_certificate(block_processor):
     db.put_claim_id_signed_by_cert_id(b'certificate_id', b'claim_id1')
     db.put_claim_id_signed_by_cert_id(b'certificate_id', b'claim_id2')
     db.remove_certificate(b'certificate_id')
-    assert db.get_signed_claim_id_by_cert_id(b'certificate_id') == list()
+    assert db.get_signed_claim_ids_by_cert_id(b'certificate_id') == list()
 
 
 def test_cert_to_claims_storage_removal_of_claim_id(block_processor):
@@ -36,7 +36,7 @@ def test_cert_to_claims_storage_removal_of_claim_id(block_processor):
     db.put_claim_id_signed_by_cert_id(b'certificate_id', b'claim_id1')
     db.put_claim_id_signed_by_cert_id(b'certificate_id', b'claim_id2')
     db.remove_claim_from_certificate_claims(b'certificate_id', b'claim_id1')
-    assert db.get_signed_claim_id_by_cert_id(b'certificate_id') == [b'claim_id2']
+    assert db.get_signed_claim_ids_by_cert_id(b'certificate_id') == [b'claim_id2']
 
 
 def test_claim_id_outpoint_retrieval(block_processor):

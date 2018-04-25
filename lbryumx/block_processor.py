@@ -224,13 +224,13 @@ class LBRYBlockProcessor(BlockProcessor):
                 claims[claim_id] = number - 1
         self.claims_for_name_cache[name] = claims
 
-    def get_signed_claim_id_by_cert_id(self, cert_id):
+    def get_signed_claim_ids_by_cert_id(self, cert_id):
         if cert_id in self.claims_signed_by_cert_cache: return self.claims_signed_by_cert_cache[cert_id]
         db_claims = self.signatures_db.get(cert_id)
         return msgpack.loads(db_claims, use_list=True) if db_claims else []
 
     def put_claim_id_signed_by_cert_id(self, cert_id, claim_id):
-        certs = self.get_signed_claim_id_by_cert_id(cert_id)
+        certs = self.get_signed_claim_ids_by_cert_id(cert_id)
         certs.append(claim_id)
         self.claims_signed_by_cert_cache[cert_id] = certs
 
@@ -238,7 +238,7 @@ class LBRYBlockProcessor(BlockProcessor):
         self.claims_signed_by_cert_cache[cert_id] = []
 
     def remove_claim_from_certificate_claims(self, cert_id, claim_id):
-        certs = self.get_signed_claim_id_by_cert_id(cert_id)
+        certs = self.get_signed_claim_ids_by_cert_id(cert_id)
         if claim_id in certs:
             certs.remove(claim_id)
         self.claims_signed_by_cert_cache[cert_id] = certs
