@@ -14,3 +14,7 @@ class LBCDaemon(Daemon):
     async def getclaimsforname(self, name):
         '''Given a name, retrieves all claims matching that name.'''
         return await self._send_single('getclaimsforname', (name,))
+
+    async def getclaimsfortx(self, txid):
+        '''Given a txid, returns the claims it make.'''
+        return await self._send_single('getclaimsfortx', (txid,))
