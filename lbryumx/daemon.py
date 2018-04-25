@@ -18,3 +18,7 @@ class LBCDaemon(Daemon):
     async def getclaimsfortx(self, txid):
         '''Given a txid, returns the claims it make.'''
         return await self._send_single('getclaimsfortx', (txid,))
+
+    async def getnameproof(self, name, block_hash=None):
+        '''Given a txid, returns the claims it make.'''
+        return await self._send_single('getnameproof', (name, block_hash,) if block_hash else (name,))
