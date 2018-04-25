@@ -15,12 +15,12 @@ class LBRYElectrumX(ElectrumX):
         handlers = {
             'blockchain.transaction.get_height': self.transaction_get_height,
             'blockchain.claimtrie.getclaimbyid': self.claimtrie_getclaimbyid,
-            'blockchain.claimtrie.getclaimsforname': self.claimtrie_getclaimsforname
+            'blockchain.claimtrie.getclaimsforname': self.claimtrie_getclaimsforname,
+            'blockchain.claimtrie.getclaimsbyids': self.claimtrie_getclaimsbyids
         }
         self.electrumx_handlers.update(handlers)
 
     async def transaction_get_height(self, tx_hash):
-        self.log_info("worked")
         self.assert_tx_hash(tx_hash)
         transaction_info = await self.daemon.getrawtransaction(tx_hash, True)
         if transaction_info and 'hex' in transaction_info and 'confirmations' in transaction_info:
@@ -45,6 +45,7 @@ class LBRYElectrumX(ElectrumX):
 
     def format_claim_from_daemon(self, claim, name=None):
         '''Changes the returned claim data to the format expected by lbrynet and adds missing fields.'''
+        if not claim: return {}
         name = name or claim['name']
         claim_id = claim['claimId']
         raw_claim_id = unhexlify(claim_id)[::-1]
@@ -72,6 +73,10 @@ class LBRYElectrumX(ElectrumX):
         self.assert_claim_id(claim_id)
         claim = await self.daemon.getclaimbyid(claim_id)
         return self.format_claim_from_daemon(claim)
+
+    async def claimtrie_getclaimsbyids(self, *claim_ids):
+        claims = await self.daemon.getclaimsbyids(claim_ids)
+        return dict((claim_id, self.format_claim_from_daemon(claim),) for claim_id, claim in zip(claim_ids, claims))
 
     def assert_tx_hash(self, value):
         '''Raise an RPCError if the value is not a valid transaction
