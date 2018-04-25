@@ -1,5 +1,6 @@
 from binascii import unhexlify, hexlify
 
+from electrumx.lib.hash import hash_to_str
 from electrumx.server.session import ElectrumX
 import electrumx.lib.util as util
 from electrumx.lib.jsonrpc import RPCError
@@ -20,6 +21,7 @@ class LBRYElectrumX(ElectrumX):
             'blockchain.claimtrie.getclaimsforname': self.claimtrie_getclaimsforname,
             'blockchain.claimtrie.getclaimsbyids': self.claimtrie_getclaimsbyids,
             'blockchain.claimtrie.getvalue': self.claimtrie_getnameproof,
+            'blockchain.claimtrie.getnthclaimforname': self.claimtrie_getnthclaimforname,
             'blockchain.claimtrie.getclaimsintx': self.claimtrie_getclaimsintx
         }
         self.electrumx_handlers.update(handlers)
@@ -59,6 +61,13 @@ class LBRYElectrumX(ElectrumX):
             result['supports'] = self.format_supports_from_daemon(claim_info['supports'])
         return result
 
+    async def claimtrie_getnthclaimforname(self, name, n):
+        n = int(n)
+        for claim_id, sequence in self.bp.get_claims_for_name(name.encode('ISO-8859-1')).items():
+            if n == sequence:
+                print(hash_to_str(claim_id))
+                return await self.claimtrie_getclaimbyid(hash_to_str(claim_id))
+
     async def claimtrie_getclaimsforname(self, name):
         claims = await self.daemon.getclaimsforname(name)
         if claims:
@@ -79,24 +88,30 @@ class LBRYElectrumX(ElectrumX):
         address = self.bp.get_claim_info(raw_claim_id).address.decode()
         sequence = self.bp.get_claims_for_name(name.encode('ISO-8859-1'))[raw_claim_id]
         supports = self.format_supports_from_daemon(claim['supports'])
+
+        amount = get_from_possible_keys(claim, 'amount', 'nAmount')
+        height = get_from_possible_keys(claim, 'height', 'nHeight')
+        effective_amount = get_from_possible_keys(claim, 'effective amount', 'nEffectiveAmount')
+        valid_at_height = get_from_possible_keys(claim, 'valid at height', 'nValidAtHeight')
+
         return {
             "name": name,
             "claim_id": claim['claimId'],
             "txid": claim['txid'],
             "nout": claim['n'],
-            "amount": claim.get('amount') or claim['nAmount'],
-            "depth": self.bp.db_height - (claim.get('height') or claim['nHeight']),
-            "height": claim.get('height') or claim['nHeight'],
+            "amount": amount,
+            "depth": self.bp.db_height - height,
+            "height": height,
             "value": hexlify(claim['value'].encode('ISO-8859-1')).decode(),
             "claim_sequence": sequence,  # from index
             "address": address,  # from index
             "supports": supports,
-            "effective_amount": claim.get('effective amount') or claim['nEffectiveAmount'],
-            "valid_at_height": claim.get('valid at height') or claim['nValidAtHeight']  # TODO PR lbrycrd to include it
+            "effective_amount": effective_amount,
+            "valid_at_height": valid_at_height  # TODO PR lbrycrd to include it
         }
 
     def format_supports_from_daemon(self, supports):
-        return [[support['txid'], support['n'], support.get('amount') or support['nAmount']] for
+        return [[support['txid'], support['n'], get_from_possible_keys(support, 'amount', 'nAmount')] for
                  support in supports]
 
     async def claimtrie_getclaimbyid(self, claim_id):
@@ -131,3 +146,9 @@ class LBRYElectrumX(ElectrumX):
 
 def proof_has_winning_claim(proof):
     return {'txhash', 'nOut'}.issubset(proof.keys())
+
+
+def get_from_possible_keys(dictionary, *keys):
+    for key in keys:
+        if key in dictionary:
+            return dictionary[key]
