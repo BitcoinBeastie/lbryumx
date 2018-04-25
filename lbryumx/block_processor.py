@@ -8,7 +8,7 @@ import msgpack
 from electrumx.lib.hash import hash_to_str
 
 from electrumx.server.block_processor import BlockProcessor
-from lbryschema.decode import smart_decode
+from lbryschema.proto.claim_pb2 import Claim
 from lbryschema.uri import parse_lbry_uri
 
 from lbryumx.model import NameClaim, ClaimInfo, ClaimUpdate, ClaimSupport
@@ -177,7 +177,7 @@ class LBRYBlockProcessor(BlockProcessor):
         name, value, cert_id = output.claim.name, output.claim.value, None
         try:
             parse_lbry_uri(name.decode())  # skip invalid names
-            cert_id = smart_decode(value).certificate_id
+            cert_id = Claim.FromString(value).publisherSignature.certificateId or None
         except Exception:
             pass
         assert txid and address
@@ -227,17 +227,20 @@ class LBRYBlockProcessor(BlockProcessor):
     def get_signed_claim_id_by_cert_id(self, cert_id):
         if cert_id in self.claims_signed_by_cert_cache: return self.claims_signed_by_cert_cache[cert_id]
         db_claims = self.signatures_db.get(cert_id)
-        return msgpack.loads(db_claims, use_list=False) if db_claims else tuple()
+        return msgpack.loads(db_claims, use_list=True) if db_claims else []
 
     def put_claim_id_signed_by_cert_id(self, cert_id, claim_id):
-        self.claims_signed_by_cert_cache[cert_id] = self.get_signed_claim_id_by_cert_id(cert_id) + (claim_id,)
+        certs = self.get_signed_claim_id_by_cert_id(cert_id)
+        certs.append(claim_id)
+        self.claims_signed_by_cert_cache[cert_id] = certs
 
     def remove_certificate(self, cert_id):
-        self.claims_signed_by_cert_cache[cert_id] = tuple()
+        self.claims_signed_by_cert_cache[cert_id] = []
 
     def remove_claim_from_certificate_claims(self, cert_id, claim_id):
         certs = self.get_signed_claim_id_by_cert_id(cert_id)
-        certs = tuple(filter(lambda claimed_id: claimed_id != claim_id, certs))
+        if claim_id in certs:
+            certs.remove(claim_id)
         self.claims_signed_by_cert_cache[cert_id] = certs
 
     def get_claim_info(self, claim_id):
