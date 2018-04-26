@@ -23,6 +23,7 @@ class LBRYElectrumX(ElectrumX):
             'blockchain.claimtrie.getvalue': self.claimtrie_getnameproof,
             'blockchain.claimtrie.getnthclaimforname': self.claimtrie_getnthclaimforname,
             'blockchain.claimtrie.getclaimsintx': self.claimtrie_getclaimsintx,
+            'blockchain.claimtrie.getclaimssignedby': self.claimtrie_getclaimssignedby,
             'blockchain.claimtrie.getclaimssignedbyid': self.claimtrie_getclaimssignedbyid
         }
         self.electrumx_handlers.update(handlers)
@@ -38,6 +39,11 @@ class LBRYElectrumX(ElectrumX):
         elif transaction_info and 'hex' in transaction_info:
             return -1
         return None
+
+    async def claimtrie_getclaimssignedby(self, name):
+        winning_claim = await self.daemon.getvalueforname(str(name))
+        if winning_claim:
+            return await self.claimtrie_getclaimssignedbyid(winning_claim['claimId'])
 
     async def claimtrie_getclaimssignedbyid(self, certificate_id):
         raw_certificate_id = unhexlify(certificate_id)[::-1]
