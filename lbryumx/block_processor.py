@@ -155,6 +155,11 @@ class LBRYBlockProcessor(BlockProcessor):
     def update_claim(self, output, height, txid, nout):
         claim_id = output.claim.claim_id
         claim_info = self.claim_info_from_output(output, txid, nout, height)
+        old_cert_id = self.get_claim_info(claim_id).cert_id
+        if old_cert_id:
+            self.remove_claim_from_certificate_claims(old_cert_id, claim_id)
+        if claim_info.cert_id:
+            self.put_claim_id_signed_by_cert_id(claim_info.cert_id, claim_id)
         self.put_claim_info(claim_id, claim_info)
         self.put_claim_id_for_outpoint(txid, nout, claim_id)
 
