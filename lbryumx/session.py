@@ -24,6 +24,7 @@ class LBRYElectrumX(ElectrumX):
             'blockchain.claimtrie.getnthclaimforname': self.claimtrie_getnthclaimforname,
             'blockchain.claimtrie.getclaimsintx': self.claimtrie_getclaimsintx,
             'blockchain.claimtrie.getclaimssignedby': self.claimtrie_getclaimssignedby,
+            'blockchain.claimtrie.getclaimssignedbynthtoname': self.claimtrie_getclaimssignedbynthtoname,
             'blockchain.claimtrie.getclaimssignedbyid': self.claimtrie_getclaimssignedbyid
         }
         self.electrumx_handlers.update(handlers)
@@ -52,6 +53,11 @@ class LBRYElectrumX(ElectrumX):
         claims = await self.daemon.getclaimsbyids(claim_ids)
         return list(map(self.format_claim_from_daemon, claims))
 
+    async def claimtrie_getclaimssignedbynthtoname(self, name, n):
+        n = int(n)
+        for claim_id, sequence in self.bp.get_claims_for_name(name.encode('ISO-8859-1')).items():
+            if n == sequence:
+                return await self.claimtrie_getclaimssignedbyid(hash_to_str(claim_id))
 
     async def claimtrie_getclaimsintx(self, txid):
         # TODO: this needs further discussion.
