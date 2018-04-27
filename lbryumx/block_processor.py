@@ -75,9 +75,11 @@ class LBRYBlockProcessor(BlockProcessor):
             if claim.cert_id:
                 self.remove_claim_from_certificate_claims(claim.cert_id, claim_id)
             self.remove_certificate(claim_id)
-            if claim_id in self.claim_cache:
-                del self.claim_cache[claim_id]
-            delete_claim(claim_id)
+            # TODO: getclaimbyid included abandoned claims, so we can't delete from our storage for now
+            # case found: 70a4753a0648d45346580c5c3dd5363e417d6a02 name:four
+            # if claim_id in self.claim_cache:
+                #del self.claim_cache[claim_id]
+            # delete_claim(claim_id)
             for txid, tx_index in outpoints:
                 outpoint = txid + struct.pack('>I', tx_index)
                 if outpoint in self.outpoint_to_claim_id_cache:
