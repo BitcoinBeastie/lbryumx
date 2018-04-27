@@ -1,3 +1,6 @@
+from hashlib import sha256
+from random import getrandbits
+
 from electrumx.lib.hash import hash_to_str
 from electrumx.lib.tx import TxInput
 from lbryschema.decode import smart_decode
@@ -13,59 +16,36 @@ from .data import claim_data
 
 
 def test_simple_claim_info_import(block_processor):
-    address = 'bTZito1AqWPig64GBioom11mHpoegMfXHx'
-    name, value = b'potatoes', b'are_nice'
-    output = create_claim_output(address, name, value)
-    height, txid, nout = 42, b'txid', 300
-    block_processor.advance_claim_name_transaction(output, height, txid, nout)
-    claim_id = claim_id_hash(txid, nout)
+    claim_id, expected_claim_info = make_claim(block_processor)
 
     claim_info = block_processor.get_claim_info(claim_id)
-    expected_claim_info = ClaimInfo(name, value, txid, nout, output.value, address.encode(), height, cert_id=None)
     assert_claim_info_equal(claim_info, expected_claim_info)
 
 
 def test_signed_claim_info_import(block_processor):
-    address = 'bTZito1AqWPig64GBioom11mHpoegMfXHx'
     cert_claim_name = b'@certified-claims'
     cert, privkey = create_cert()
-    cert_output = create_claim_output(address, cert_claim_name, cert.serialized)
-    height, txid, nout = 42, b'txid', 3
-    block_processor.advance_claim_name_transaction(cert_output, height, txid, nout)
-    cert_claim_id = claim_id_hash(txid, nout)
+    cert_claim_id, expected_claim_info = make_claim(block_processor, cert_claim_name, cert.serialized)
 
     signed_claim_name = b'signed-claim'
-    signed_claim_txid = b'signed_txid'
-    signed_claim_out = create_claim_output(address, signed_claim_name, claim_data.test_claim_dict,
-                                           key=privkey, cert_id=cert_claim_id)
-    signed_claim_id = claim_id_hash(signed_claim_txid, nout)
-    block_processor.advance_claim_name_transaction(signed_claim_out, height, signed_claim_txid, nout)
+    value = ClaimDict.load_dict(claim_data.test_claim_dict).serialized
+    signed_claim_id, expected_signed_claim_info = make_claim(block_processor, signed_claim_name, value, privkey, cert_claim_id)
 
     cert_claim_info = block_processor.get_claim_info(cert_claim_id)
-    expected_claim_info = ClaimInfo(cert_claim_name, cert.serialized, txid, nout,
-                                    cert_output.value, address.encode(), height, cert_id=None)
     assert_claim_info_equal(cert_claim_info, expected_claim_info)
 
     signed_cert_claim_info = block_processor.get_claim_info(signed_claim_id)
-    expected_signed_claim_info = ClaimInfo(signed_claim_name, signed_claim_out.claim.value, signed_claim_txid, nout,
-                                           signed_claim_out.value, address.encode(), height,
-                                           cert_id=cert_claim_id)
     assert_claim_info_equal(signed_cert_claim_info, expected_signed_claim_info)
 
 
 def test_claim_sequence_incremented_on_claim_name(block_processor):
-    address = 'bTZito1AqWPig64GBioom11mHpoegMfXHx'
     claim_ids = []
     for idx in range(1, 3):
-        name, value = b'ordered_claims', "I'm the number {:,d}".format(idx).encode()
-        output = create_claim_output(address, name, value)
-        height, txid, nout = 42, str(idx).encode(), idx
-        block_processor.advance_claim_name_transaction(output, height, txid, nout)
-        claim_id = claim_id_hash(txid, nout)
+        claim_id, _ = make_claim(block_processor, name=b'ordered')
         claim_ids.append(claim_id)
 
     for idx, claim_id in enumerate(claim_ids, start=1):
-        assert block_processor.get_claims_for_name(name)[claim_id] == idx
+        assert block_processor.get_claims_for_name(b'ordered')[claim_id] == idx
 
 
 def test_claim_update_validator(block_processor):
@@ -80,6 +60,15 @@ def test_claim_update_validator(block_processor):
 
     assert block_processor.is_update_valid(claim, [input])
 
+
+def make_claim(block_processor, name=None, value=None, key=None, cert_id=None):
+    address = 'bTZito1AqWPig64GBioom11mHpoegMfXHx'
+    name, value = name or b'potatoes', value or b'are_nice'
+    output = create_claim_output(address, name, value, key, cert_id)
+    height, txid, nout = getrandbits(8), bytes(getrandbits(8) for _ in range(32)), getrandbits(8)
+    block_processor.advance_claim_name_transaction(output, height, txid, nout)
+    return claim_id_hash(txid, nout), ClaimInfo(name, output.claim.value, txid,
+                                                nout, output.value, address.encode(), height, cert_id)
 
 
 def create_cert():
