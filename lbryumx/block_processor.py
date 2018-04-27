@@ -147,14 +147,14 @@ class LBRYBlockProcessor(BlockProcessor):
                         self.advance_claim_name_transaction(output, height, txid, index)
                     elif isinstance(claim, ClaimUpdate):
                         if self.is_update_valid(claim, tx.inputs):
-                            self.update_claim(output, height, txid, index)
+                            self.advance_update_claim(output, height, txid, index)
                         else:
                             info = (hash_to_str(txid), hash_to_str(claim.claim_id),)
                             self.log_error("REJECTED: {} updating {}".format(*info))
                     elif isinstance(claim, ClaimSupport) and (txid, index,) not in abandon_candidates:
                         self.advance_support(claim, txid, index, height, output.value)
 
-    def update_claim(self, output, height, txid, nout):
+    def advance_update_claim(self, output, height, txid, nout):
         claim_id = output.claim.claim_id
         claim_info = self.claim_info_from_output(output, txid, nout, height)
         old_cert_id = self.get_claim_info(claim_id).cert_id

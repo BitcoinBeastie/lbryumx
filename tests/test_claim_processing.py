@@ -95,7 +95,7 @@ def make_claim(block_processor, name=None, value=None, key=None, cert_id=None, c
     claim_id = claim_id or claim_id_hash(txid, nout)
     if is_update:
         output = create_update_claim_output(address, name, claim_id, value, key, cert_id)
-        block_processor.update_claim(output, height, txid, nout)
+        block_processor.advance_update_claim(output, height, txid, nout)
     else:
         output = create_claim_output(address, name, value, key, cert_id)
         block_processor.advance_claim_name_transaction(output, height, txid, nout)
