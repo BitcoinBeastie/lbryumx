@@ -186,6 +186,10 @@ class LBRYBlockProcessor(BlockProcessor):
         self.put_claim_id_for_outpoint(txid, nout, claim_id)
 
     def backup_txs(self, txs):
+        undo_info = msgpack.loads(self.claim_undo_db.get(struct.pack(">I", self.height)), use_list=False)
+        for claim_id, old_claim_info in reversed(undo_info):
+            self.put_claim_info(claim_id, ClaimInfo.from_serialized(old_claim_info))
+
         for tx, txid in reversed(txs):
             if tx.has_claims:
                 for index, output in enumerate(tx.outputs):
