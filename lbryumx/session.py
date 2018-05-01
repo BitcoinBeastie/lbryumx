@@ -88,10 +88,16 @@ class LBRYElectrumX(ElectrumX):
             result['transaction'] = transaction_info['hex']
             result['height'] = (self.bp.db_height - transaction_info['confirmations']) + 1
             raw_claim_id = self.bp.get_claim_id_from_outpoint(unhexlify(tx_hash)[::-1], nout)
-            result['claim_id'] = claim_id = hexlify(raw_claim_id[::-1]).decode()
-            claim_info = await self.daemon.getclaimbyid(claim_id)
-            result['claim_sequence'] = self.bp.get_claims_for_name(name.encode('ISO-8859-1'))[raw_claim_id]
-            result['supports'] = self.format_supports_from_daemon(claim_info['supports'])
+            sequence = self.bp.get_claims_for_name(name.encode('ISO-8859-1')).get(raw_claim_id)
+            if sequence:
+                claim_id = hexlify(raw_claim_id[::-1]).decode()
+                claim_info = await self.daemon.getclaimbyid(claim_id)
+                result['claim_sequence'] = sequence
+                result['claim_id'] = claim_id
+                supports = self.format_supports_from_daemon(claim_info.get('supports', []))  # fixme: lbrycrd#124
+                result['supports'] = supports
+            else:
+                self.log_warning('tx has no claims in db: {} {}'.format(tx_hash, nout))
         return result
 
     async def claimtrie_getnthclaimforname(self, name, n):
@@ -127,7 +133,7 @@ class LBRYElectrumX(ElectrumX):
         sequence = self.bp.get_claims_for_name(name.encode('ISO-8859-1')).get(raw_claim_id)
         if not sequence:
             return {}
-        supports = self.format_supports_from_daemon(claim.get('supports'))  # fixme: .get as lbrycrd doesn't provide it
+        supports = self.format_supports_from_daemon(claim.get('supports', []))  # fixme: lbrycrd#124
 
         amount = get_from_possible_keys(claim, 'amount', 'nAmount')
         height = get_from_possible_keys(claim, 'height', 'nHeight')
@@ -145,7 +151,7 @@ class LBRYElectrumX(ElectrumX):
             "value": hexlify(claim['value'].encode('ISO-8859-1')).decode(),
             "claim_sequence": sequence,  # from index
             "address": address,  # from index
-            "supports": supports, # fixme: to be included in lbrycrd
+            "supports": supports, # fixme: to be included in lbrycrd#124
             "effective_amount": effective_amount,
             "valid_at_height": valid_at_height  # TODO PR lbrycrd to include it
         }
