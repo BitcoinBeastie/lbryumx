@@ -15,14 +15,14 @@ from lbryumx.model import NameClaim, TxClaimOutput, ClaimInfo, ClaimUpdate, Clai
 from .data import claim_data
 
 
-def test_simple_claim_info_import(block_processor):
+def test_simple_claim_info_advance(block_processor):
     claim_id, expected_claim_info = make_claim(block_processor)
 
     claim_info = block_processor.get_claim_info(claim_id)
     assert_claim_info_equal(claim_info, expected_claim_info)
 
 
-def test_signed_claim_info_import(block_processor):
+def test_signed_claim_info_advance(block_processor):
     cert_claim_name = b'@certified-claims'
     cert, privkey = create_cert()
     cert_claim_id, expected_claim_info = make_claim(block_processor, cert_claim_name, cert.serialized)
@@ -40,7 +40,7 @@ def test_signed_claim_info_import(block_processor):
     block_processor.get_signed_claim_ids_by_cert_id(cert_claim_id) == [signed_claim_id]
 
 
-def test_claim_sequence_incremented_on_claim_name(block_processor):
+def test_claim_sequence_incremented_on_claim_name_advance(block_processor):
     claim_ids = []
     for idx in range(1, 3):
         claim_id, _ = make_claim(block_processor, name=b'ordered')
@@ -50,7 +50,7 @@ def test_claim_sequence_incremented_on_claim_name(block_processor):
         assert block_processor.get_claims_for_name(b'ordered')[claim_id] == idx
 
 
-def test_cert_info_is_updated_on_signed_claim_updates(block_processor):
+def test_cert_info_is_updated_on_signed_claim_update_advances(block_processor):
     cert_claim_name = b'@certificate1'
     cert, privkey = create_cert()
     cert_claim_id, cert_claim_info = make_claim(block_processor, cert_claim_name, cert.serialized)
