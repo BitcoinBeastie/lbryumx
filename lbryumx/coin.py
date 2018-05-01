@@ -106,3 +106,11 @@ class LBC(Coin):
         if ops and ops[0] == OpCodes.OP_RETURN:
             return None
         return None
+
+
+class LBCRegTest(LBC):
+    GENESIS_HASH = ('6e3fcf1299d4ec5d79c3a4c91d624a4acf9e2e173d95a1a0504f677669687556')
+    XPUB_VERBYTES = bytes.fromhex("0488b21e")
+    XPRV_VERBYTES = bytes.fromhex("0488ade4")
+    P2PKH_VERBYTE = bytes.fromhex("55")
+    P2SH_VERBYTES = bytes.fromhex("7A")
