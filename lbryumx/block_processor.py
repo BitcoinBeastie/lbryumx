@@ -75,11 +75,9 @@ class LBRYBlockProcessor(BlockProcessor):
             if claim.cert_id:
                 self.remove_claim_from_certificate_claims(claim.cert_id, claim_id)
             self.remove_certificate(claim_id)
-            # TODO: getclaimbyid included abandoned claims, so we can't delete from our storage for now
-            # case found: 70a4753a0648d45346580c5c3dd5363e417d6a02 name:four
-            # if claim_id in self.claim_cache:
-                #del self.claim_cache[claim_id]
-            # delete_claim(claim_id)
+            if claim_id in self.claim_cache:
+                self.claim_cache.pop(claim_id)
+            delete_claim(claim_id)
             for txid, tx_index in outpoints:
                 outpoint = txid + struct.pack('>I', tx_index)
                 if outpoint in self.outpoint_to_claim_id_cache:
@@ -173,6 +171,18 @@ class LBRYBlockProcessor(BlockProcessor):
         self.put_claim_info(claim_id, claim_info)
         self.put_claim_for_name(claim_info.name, claim_id)
         self.put_claim_id_for_outpoint(txid, nout, claim_id)
+
+    def backup_txs(self, txs):
+        for tx, txid in reversed(txs):
+            if tx.has_claims:
+                for index, output in enumerate(tx.outputs):
+                    claim = output.claim
+                    if isinstance(claim, NameClaim):
+                        self.backup_claim_name(txid, index)
+        return super().backup_txs(txs)
+
+    def backup_claim_name(self, txid, nout):
+        self.abandon_spent(txid, nout)
 
     def advance_support(self, claim_support, txid, nout, height, amount):
         # TODO: check for more controller claim rules, like takeover or ordering
