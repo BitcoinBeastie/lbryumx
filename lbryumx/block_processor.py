@@ -21,7 +21,7 @@ class LBRYBlockProcessor(BlockProcessor):
         self.claims_for_name_cache = {}
         self.claims_signed_by_cert_cache = {}
         self.outpoint_to_claim_id_cache = {}
-        self.claims_db = self.names_db = self.signatures_db = self.outpoint_to_claim_id_db = None
+        self.claims_db = self.names_db = self.signatures_db = self.outpoint_to_claim_id_db = self.claim_undo_db = None
         super().__init__(*args, **kwargs)
 
         # stores deletes not yet flushed to disk
@@ -43,10 +43,12 @@ class LBRYBlockProcessor(BlockProcessor):
                 self.names_db.close()
                 self.signatures_db.close()
                 self.outpoint_to_claim_id_db.close()
+                self.claim_undo_db.close()
             self.claims_db = self.db_class('claims', for_sync)
             self.names_db = self.db_class('names', for_sync)
             self.signatures_db = self.db_class('signatures', for_sync)
             self.outpoint_to_claim_id_db = self.db_class('outpoint_claim_id', for_sync)
+            self.claim_undo_db = self.db_class('claim_undo', for_sync)
             log_reason('opened claim DBs', self.claims_db.for_sync)
 
     def flush_utxos(self, utxo_batch):
@@ -123,10 +125,15 @@ class LBRYBlockProcessor(BlockProcessor):
         # save height, advance blocks as usual, then hook our claim tx processing
         height = self.height + 1
         super().advance_blocks(blocks)
+        pending_undo = []
         for index, block in enumerate(blocks):
-            self.advance_claim_txs(block.transactions, height + index)
+            undo = self.advance_claim_txs(block.transactions, height + index)
+            pending_undo.append((height+index, undo,))
         while self.unprocessed_spent_utxo_set:
             self.abandon_spent(*self.unprocessed_spent_utxo_set.pop())
+        with self.claim_undo_db.write_batch() as writer:
+            for height, undo_info in pending_undo:
+                writer.put(struct.pack(">I", height), msgpack.dumps(undo_info))
 
     def spend_utxo(self, tx_hash, tx_idx):
         # this is called during electrumx tx advance, we gather spents in the process to avoid looping again
@@ -137,6 +144,8 @@ class LBRYBlockProcessor(BlockProcessor):
     def advance_claim_txs(self, txs, height):
         # TODO: generate claim undo info!
         abandon_candidates = self.unprocessed_spent_utxo_set
+        undo_info = []
+        add_undo = undo_info.append
         for tx, txid in txs:
             if tx.has_claims:
                 for index, output in enumerate(tx.outputs):
@@ -145,16 +154,19 @@ class LBRYBlockProcessor(BlockProcessor):
                         self.advance_claim_name_transaction(output, height, txid, index)
                     elif isinstance(claim, ClaimUpdate):
                         if self.is_update_valid(claim, tx.inputs):
-                            self.advance_update_claim(output, height, txid, index)
+                            add_undo(self.advance_update_claim(output, height, txid, index))
                         else:
                             info = (hash_to_str(txid), hash_to_str(claim.claim_id),)
                             self.log_error("REJECTED: {} updating {}".format(*info))
                     elif isinstance(claim, ClaimSupport) and (txid, index,) not in abandon_candidates:
                         self.advance_support(claim, txid, index, height, output.value)
+        return undo_info
 
     def advance_update_claim(self, output, height, txid, nout):
         claim_id = output.claim.claim_id
         claim_info = self.claim_info_from_output(output, txid, nout, height)
+        old_claim_info = self.get_claim_info(claim_id)
+        undo_info = (claim_id, old_claim_info.serialized)
         old_cert_id = self.get_claim_info(claim_id).cert_id
         if old_cert_id:
             self.remove_claim_from_certificate_claims(old_cert_id, claim_id)
@@ -162,6 +174,7 @@ class LBRYBlockProcessor(BlockProcessor):
             self.put_claim_id_signed_by_cert_id(claim_info.cert_id, claim_id)
         self.put_claim_info(claim_id, claim_info)
         self.put_claim_id_for_outpoint(txid, nout, claim_id)
+        return undo_info
 
     def advance_claim_name_transaction(self, output, height, txid, nout):
         claim_id = claim_id_hash(txid, nout)
