@@ -34,3 +34,36 @@ def test_simple_claim_backup(block_processor):
     assert not list(filter(None, map(block_processor.get_claims_for_name, expected_names)))
     parsed_claim_info = block_processor.get_claim_info(first_claim_id)
     assert not parsed_claim_info
+
+
+def test_claim_update_backup(block_processor):
+    # that's trickier as we need to revert to the previous state instead
+    daemon_mock = MagicMock()
+    daemon_mock.cached_height.return_value = 0
+    block_processor.coin = LBCRegTest
+    block_processor.daemon = daemon_mock
+
+    raw_blocks = list(map(unhexlify, hex_blocks))
+    blocks = [LBCRegTest.block(raw_block, i) for (i, raw_block) in enumerate(raw_blocks)]
+    up_to_first_claim_blocks = blocks[:103]
+    up_to_first_update_blocks = blocks[103:104]
+
+    block_processor.advance_blocks(up_to_first_claim_blocks)
+    block_processor.flush(True)
+
+    first_claim_id = list(block_processor.get_claims_for_name(expected_names[0]).keys())[0]
+    original_claim_info = block_processor.get_claim_info(first_claim_id)
+    assert original_claim_info
+
+    block_processor.advance_blocks(up_to_first_update_blocks)
+    block_processor.flush(True)
+
+    updated_claim_info = block_processor.get_claim_info(first_claim_id)
+    assert updated_claim_info
+    assert updated_claim_info != original_claim_info
+
+    block_processor.backup_blocks(list(reversed(raw_blocks[103:104])))
+
+    backed_up_claim_info = block_processor.get_claim_info(first_claim_id)
+    assert backed_up_claim_info
+    assert original_claim_info == backed_up_claim_info
