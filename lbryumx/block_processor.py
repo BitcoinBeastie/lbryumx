@@ -1,8 +1,6 @@
 import hashlib
 import struct
 import time
-from binascii import unhexlify, hexlify
-from typing import Tuple
 
 import msgpack
 from electrumx.lib.hash import hash_to_str
@@ -10,7 +8,6 @@ from electrumx.lib.hash import hash_to_str
 from electrumx.server.block_processor import BlockProcessor
 from lbryschema.proto.claim_pb2 import Claim
 from lbryschema.uri import parse_lbry_uri
-from lbryschema.validator import Validator
 from lbryschema.decode import smart_decode
 
 from lbryumx.model import NameClaim, ClaimInfo, ClaimUpdate, ClaimSupport
