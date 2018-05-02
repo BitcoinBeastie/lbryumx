@@ -26,6 +26,8 @@ class LBRYBlockProcessor(BlockProcessor):
         # stores deletes not yet flushed to disk
         self.pending_abandons = {}
         self.unprocessed_spent_utxo_set = set()
+        self.should_validate_signatures = self.env.boolean('VALIDATE_CLAIM_SIGNATURES', False)
+        self.log_info("LbryumX Block Processor - Validating signatures: {}".format(self.should_validate_signatures))
 
     def open_dbs(self):
         super().open_dbs()
@@ -216,6 +218,8 @@ class LBRYBlockProcessor(BlockProcessor):
         try:
             parse_lbry_uri(name.decode())  # skip invalid names
             cert_id = Claim.FromString(value).publisherSignature.certificateId[::-1] or None
+            if not self.should_validate_signatures:
+                return cert_id
             if cert_id:
                 cert_claim = self.get_claim_info(cert_id)
                 if cert_claim:
