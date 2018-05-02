@@ -128,7 +128,8 @@ class LBRYElectrumX(ElectrumX):
         claim_id = claim['claimId']
         raw_claim_id = unhexlify(claim_id)[::-1]
         if not self.bp.get_claim_info(raw_claim_id):
-            raise RPCError("Lbrycrd has %s but not lbryumx, please submit a bug report.".format(claim_id))
+            #raise RPCError("Lbrycrd has {} but not lbryumx, please submit a bug report.".format(claim_id))
+            return {}
         address = self.bp.get_claim_info(raw_claim_id).address.decode()
         sequence = self.bp.get_claims_for_name(name.encode('ISO-8859-1')).get(raw_claim_id)
         if not sequence:
