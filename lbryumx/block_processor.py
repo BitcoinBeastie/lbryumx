@@ -10,6 +10,8 @@ from electrumx.lib.hash import hash_to_str
 from electrumx.server.block_processor import BlockProcessor
 from lbryschema.proto.claim_pb2 import Claim
 from lbryschema.uri import parse_lbry_uri
+from lbryschema.validator import Validator
+from lbryschema.decode import smart_decode
 
 from lbryumx.model import NameClaim, ClaimInfo, ClaimUpdate, ClaimSupport
 
@@ -209,13 +211,23 @@ class LBRYBlockProcessor(BlockProcessor):
         amount = output.value
         address = self.coin.address_from_script(output.pk_script)
         name, value, cert_id = output.claim.name, output.claim.value, None
+        assert txid and address
+        cert_id = self._checksig(name, value, address)
+        return ClaimInfo(name, value, txid, nout, amount, address, height, cert_id)
+
+    def _checksig(self, name, value, address):
         try:
             parse_lbry_uri(name.decode())  # skip invalid names
             cert_id = Claim.FromString(value).publisherSignature.certificateId[::-1] or None
-        except Exception:
+            if cert_id:
+                cert_claim = self.get_claim_info(cert_id)
+                if cert_claim:
+                    certificate = smart_decode(cert_claim.value)
+                    claim_dict = smart_decode(value)
+                    claim_dict.validate_signature(address, certificate)
+                    return cert_id
+        except Exception as e:
             pass
-        assert txid and address
-        return ClaimInfo(name, value, txid, nout, amount, address, height, cert_id)
 
     def is_update_valid(self, claim, inputs):
         claim_id = claim.claim_id
