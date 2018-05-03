@@ -25,7 +25,6 @@ class LBRYBlockProcessor(BlockProcessor):
 
         # stores deletes not yet flushed to disk
         self.pending_abandons = {}
-        self.unprocessed_spent_utxo_set = set()
         self.should_validate_signatures = self.env.boolean('VALIDATE_CLAIM_SIGNATURES', False)
         self.log_info("LbryumX Block Processor - Validating signatures: {}".format(self.should_validate_signatures))
 
@@ -130,8 +129,6 @@ class LBRYBlockProcessor(BlockProcessor):
         for index, block in enumerate(blocks):
             undo = self.advance_claim_txs(block.transactions, height + index)
             pending_undo.append((height+index, undo,))
-        while self.unprocessed_spent_utxo_set:
-            self.abandon_spent(*self.unprocessed_spent_utxo_set.pop())
         with self.claim_undo_db.write_batch() as writer:
             for height, undo_info in pending_undo:
                 writer.put(struct.pack(">I", height), msgpack.dumps(undo_info))
@@ -139,43 +136,47 @@ class LBRYBlockProcessor(BlockProcessor):
     def spend_utxo(self, tx_hash, tx_idx):
         # this is called during electrumx tx advance, we gather spents in the process to avoid looping again
         result = super().spend_utxo(tx_hash, tx_idx)
-        self.unprocessed_spent_utxo_set.add((tx_hash, tx_idx,))
         return result
 
     def advance_claim_txs(self, txs, height):
         # TODO: generate claim undo info!
-        abandon_candidates = self.unprocessed_spent_utxo_set
         undo_info = []
+        update_inputs = set()
         add_undo = undo_info.append
         for tx, txid in txs:
             if tx.has_claims:
                 for index, output in enumerate(tx.outputs):
                     claim = output.claim
                     if isinstance(claim, NameClaim):
-                        self.advance_claim_name_transaction(output, height, txid, index)
+                        add_undo(self.advance_claim_name_transaction(output, height, txid, index))
                     elif isinstance(claim, ClaimUpdate):
-                        if self.is_update_valid(claim, tx.inputs):
+                        update_input = self.get_update_input(claim, tx.inputs)
+                        if update_input:
+                            update_inputs.add(update_input)
                             add_undo(self.advance_update_claim(output, height, txid, index))
                         else:
                             info = (hash_to_str(txid), hash_to_str(claim.claim_id),)
                             self.log_error("REJECTED: {} updating {}".format(*info))
-                    elif isinstance(claim, ClaimSupport) and (txid, index,) not in abandon_candidates:
+                    elif isinstance(claim, ClaimSupport):
                         self.advance_support(claim, txid, index, height, output.value)
+        for txin in tx.inputs:
+            if txin not in update_inputs:
+                abandoned_claim_id = self.abandon_spent(txin.prev_hash, txin.prev_idx)
+                if abandoned_claim_id:
+                    add_undo((abandoned_claim_id, self.get_claim_info(abandoned_claim_id)))
         return undo_info
 
     def advance_update_claim(self, output, height, txid, nout):
         claim_id = output.claim.claim_id
         claim_info = self.claim_info_from_output(output, txid, nout, height)
         old_claim_info = self.get_claim_info(claim_id)
-        undo_info = (claim_id, old_claim_info.serialized)
-        old_cert_id = self.get_claim_info(claim_id).cert_id
-        if old_cert_id:
-            self.remove_claim_from_certificate_claims(old_cert_id, claim_id)
+        if old_claim_info.cert_id:
+            self.remove_claim_from_certificate_claims(old_claim_info.cert_id, claim_id)
         if claim_info.cert_id:
             self.put_claim_id_signed_by_cert_id(claim_info.cert_id, claim_id)
         self.put_claim_info(claim_id, claim_info)
         self.put_claim_id_for_outpoint(txid, nout, claim_id)
-        return undo_info
+        return claim_id, old_claim_info
 
     def advance_claim_name_transaction(self, output, height, txid, nout):
         claim_id = claim_id_hash(txid, nout)
@@ -185,18 +186,29 @@ class LBRYBlockProcessor(BlockProcessor):
         self.put_claim_info(claim_id, claim_info)
         self.put_claim_for_name(claim_info.name, claim_id)
         self.put_claim_id_for_outpoint(txid, nout, claim_id)
+        return claim_id, None
+
+    def backup_from_undo_info(self, claim_id, new_claim_info):
+        new_claim_info = ClaimInfo(*new_claim_info) if new_claim_info else None
+        current_claim_info = self.get_claim_info(claim_id)
+        if not new_claim_info:
+            self.abandon_spent(current_claim_info.txid, current_claim_info.nout)
+            return
+        elif current_claim_info:
+            self.remove_claim_id_for_outpoint(new_claim_info.txid, new_claim_info.nout)
+            if current_claim_info.cert_id:
+                self.remove_claim_from_certificate_claims(current_claim_info.cert_id, claim_id)
+        self.put_claim_info(claim_id, new_claim_info)
+        if new_claim_info.cert_id:
+            cert_id = self._checksig(new_claim_info.name, new_claim_info.value, new_claim_info.address)
+            self.put_claim_id_signed_by_cert_id(cert_id, new_claim_info)
+        self.put_claim_for_name(new_claim_info.name, claim_id)
+        self.put_claim_id_for_outpoint(new_claim_info.txid, new_claim_info.nout, claim_id)
 
     def backup_txs(self, txs):
         undo_info = msgpack.loads(self.claim_undo_db.get(struct.pack(">I", self.height)), use_list=False)
         for claim_id, old_claim_info in reversed(undo_info):
-            self.put_claim_info(claim_id, ClaimInfo.from_serialized(old_claim_info))
-
-        for tx, txid in reversed(txs):
-            if tx.has_claims:
-                for index, output in enumerate(tx.outputs):
-                    claim = output.claim
-                    if isinstance(claim, NameClaim):
-                        self.backup_claim_name(txid, index)
+            self.backup_from_undo_info(claim_id, old_claim_info)
         return super().backup_txs(txs)
 
     def backup_claim_name(self, txid, nout):
@@ -230,24 +242,27 @@ class LBRYBlockProcessor(BlockProcessor):
         except Exception as e:
             pass
 
-    def is_update_valid(self, claim, inputs):
+    def get_update_input(self, claim, inputs):
         claim_id = claim.claim_id
         claim_info = self.get_claim_info(claim_id)
         if not claim_info:
             return False
         for input in inputs:
             if input.prev_hash == claim_info.txid and input.prev_idx == claim_info.nout:
-                self.unprocessed_spent_utxo_set.remove((claim_info.txid, claim_info.nout))
-                return True
+                return input
         return False
 
     def abandon_spent(self, tx_hash, tx_idx):
         claim_id = self.get_claim_id_from_outpoint(tx_hash, tx_idx)
         if claim_id:
             self.pending_abandons.setdefault(claim_id, []).append((tx_hash, tx_idx,))
+            return claim_id
 
     def put_claim_id_for_outpoint(self, tx_hash, tx_idx, claim_id):
         self.outpoint_to_claim_id_cache[tx_hash + struct.pack('>I', tx_idx)] = claim_id
+
+    def remove_claim_id_for_outpoint(self, tx_hash, tx_idx):
+        self.outpoint_to_claim_id_cache[tx_hash + struct.pack('>I', tx_idx)] = None
 
     def get_claim_id_from_outpoint(self, tx_hash, tx_idx):
         key = tx_hash + struct.pack('>I', tx_idx)
@@ -260,7 +275,7 @@ class LBRYBlockProcessor(BlockProcessor):
 
     def put_claim_for_name(self, name, claim_id):
         claims = self.get_claims_for_name(name)
-        claims[claim_id] = max(claims.values() or [0]) + 1
+        claims.setdefault(claim_id, max(claims.values() or [0]) + 1)
         self.claims_for_name_cache[name] = claims
 
     def remove_claim_for_name(self, name, claim_id):
