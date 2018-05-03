@@ -75,12 +75,11 @@ def test_claim_update_validator(block_processor):
     prev_hash, prev_idx = b'previous_claim_txid', 42
     input = TxInput(prev_hash, prev_idx, b'script', 1)
     claim = ClaimUpdate(b'name', claim_id, b'new value')
-    block_processor.unprocessed_spent_utxo_set.add((prev_hash, prev_idx,))
-    assert not block_processor.is_update_valid(claim, [input])
+    assert not block_processor.get_update_input(claim, [input])
 
     block_processor.put_claim_info(claim_id, ClaimInfo(b'name', b'value', prev_hash, prev_idx, 20, b'address', 1, None))
 
-    assert block_processor.is_update_valid(claim, [input])
+    assert block_processor.get_update_input(claim, [input])
 
 
 def update_claim(*args, **kwargs):
