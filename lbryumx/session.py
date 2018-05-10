@@ -30,9 +30,13 @@ class LBRYElectrumX(ElectrumX):
             'blockchain.claimtrie.getclaimssignedbynthtoname': self.claimtrie_getclaimssignedbynthtoname,
             'blockchain.claimtrie.getvalueforuri': self.claimtrie_getvalueforuri,
             'blockchain.claimtrie.getvaluesforuris': self.claimtrie_getvalueforuris,
-            'blockchain.claimtrie.getclaimssignedbyid': self.claimtrie_getclaimssignedbyid
+            'blockchain.claimtrie.getclaimssignedbyid': self.claimtrie_getclaimssignedbyid,
+            'blockchain.block.get_server_height': self.get_server_height
         }
         self.electrumx_handlers.update(handlers)
+
+    def get_server_height(self):
+        return self.bp.height
 
     async def transaction_get_height(self, tx_hash):
         self.assert_tx_hash(tx_hash)
