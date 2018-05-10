@@ -71,22 +71,19 @@ class LBRYBlockProcessor(BlockProcessor):
         delete_claim, delete_outpoint, delete_name = batch.delete, outpoint_batch.delete, names_batch.delete
         delete_cert = signed_claims_batch.delete
         for claim_id, outpoints in self.pending_abandons.items():
-            if not outpoints: continue
             claim = self.get_claim_info(claim_id)
             self.remove_claim_for_name(claim.name, claim_id)
             if claim.cert_id:
                 self.remove_claim_from_certificate_claims(claim.cert_id, claim_id)
             self.remove_certificate(claim_id)
-            if claim_id in self.claim_cache:
-                self.claim_cache.pop(claim_id)
-            delete_claim(claim_id)
+            self.claim_cache[claim_id] = None
             for txid, tx_index in outpoints:
-                outpoint = txid + struct.pack('>I', tx_index)
-                if outpoint in self.outpoint_to_claim_id_cache:
-                    del self.outpoint_to_claim_id_cache[outpoint]
-                delete_outpoint(outpoint)
+                self.put_claim_id_for_outpoint(txid, tx_index, None)
         for key, claim in self.claim_cache.items():
-            write_claim(key, claim)
+            if claim:
+                write_claim(key, claim)
+            else:
+                delete_claim(key)
         for name, claims in self.claims_for_name_cache.items():
             if not claims:
                 delete_name(name)
@@ -98,7 +95,10 @@ class LBRYBlockProcessor(BlockProcessor):
             else:
                 write_cert(cert_id, msgpack.dumps(claims))
         for key, claim_id in self.outpoint_to_claim_id_cache.items():
-            write_outpoint(key, claim_id)
+            if claim_id:
+                write_outpoint(key, claim_id)
+            else:
+                delete_outpoint(key)
         if self.claims_db.for_sync:
             self.logger.info('flushed {:,d} blocks with {:,d} claims, {:,d} outpoints, {:,d} names '
                              'and {:,d} certificates added while {:,d} were abandoned in {:.1f}s, committing...'
@@ -141,9 +141,10 @@ class LBRYBlockProcessor(BlockProcessor):
     def advance_claim_txs(self, txs, height):
         # TODO: generate claim undo info!
         undo_info = []
-        update_inputs = set()
         add_undo = undo_info.append
+        update_inputs = set()
         for tx, txid in txs:
+            update_inputs.clear()
             if tx.has_claims:
                 for index, output in enumerate(tx.outputs):
                     claim = output.claim
@@ -159,17 +160,18 @@ class LBRYBlockProcessor(BlockProcessor):
                             self.log_error("REJECTED: {} updating {}".format(*info))
                     elif isinstance(claim, ClaimSupport):
                         self.advance_support(claim, txid, index, height, output.value)
-        for txin in tx.inputs:
-            if txin not in update_inputs:
-                abandoned_claim_id = self.abandon_spent(txin.prev_hash, txin.prev_idx)
-                if abandoned_claim_id:
-                    add_undo((abandoned_claim_id, self.get_claim_info(abandoned_claim_id)))
+            for txin in tx.inputs:
+                if txin not in update_inputs:
+                    abandoned_claim_id = self.abandon_spent(txin.prev_hash, txin.prev_idx)
+                    if abandoned_claim_id:
+                        add_undo((abandoned_claim_id, self.get_claim_info(abandoned_claim_id)))
         return undo_info
 
     def advance_update_claim(self, output, height, txid, nout):
         claim_id = output.claim.claim_id
         claim_info = self.claim_info_from_output(output, txid, nout, height)
         old_claim_info = self.get_claim_info(claim_id)
+        self.put_claim_id_for_outpoint(old_claim_info.txid, old_claim_info.nout, None)
         if old_claim_info.cert_id:
             self.remove_claim_from_certificate_claims(old_claim_info.cert_id, claim_id)
         if claim_info.cert_id:
@@ -188,27 +190,44 @@ class LBRYBlockProcessor(BlockProcessor):
         self.put_claim_id_for_outpoint(txid, nout, claim_id)
         return claim_id, None
 
-    def backup_from_undo_info(self, claim_id, new_claim_info):
-        new_claim_info = ClaimInfo(*new_claim_info) if new_claim_info else None
+    def backup_from_undo_info(self, claim_id, undo_claim_info):
+        """
+        Undo information holds a claim state **before** a transaction changes it
+        There are 4 possibilities when processing it, of which only 3 are valid ones:
+         1. the claim is known and the undo info has info, it was an update
+         2. the claim is known and the undo info doesn't hold any info, it was claimed
+         3. the claim in unknown and the undo info has info, it was abandoned
+         4. the claim is unknown and the undo info does't hold info, error!
+        """
+
+        undo_claim_info = ClaimInfo(*undo_claim_info) if undo_claim_info else None
         current_claim_info = self.get_claim_info(claim_id)
-        if not new_claim_info:
-            self.abandon_spent(current_claim_info.txid, current_claim_info.nout)
-            return
-        elif current_claim_info:
-            self.remove_claim_id_for_outpoint(new_claim_info.txid, new_claim_info.nout)
+        if current_claim_info and undo_claim_info:
+            # update, remove current claim
+            self.remove_claim_id_for_outpoint(current_claim_info.txid, current_claim_info.nout)
             if current_claim_info.cert_id:
                 self.remove_claim_from_certificate_claims(current_claim_info.cert_id, claim_id)
-        self.put_claim_info(claim_id, new_claim_info)
-        if new_claim_info.cert_id:
-            cert_id = self._checksig(new_claim_info.name, new_claim_info.value, new_claim_info.address)
-            self.put_claim_id_signed_by_cert_id(cert_id, new_claim_info)
-        self.put_claim_for_name(new_claim_info.name, claim_id)
-        self.put_claim_id_for_outpoint(new_claim_info.txid, new_claim_info.nout, claim_id)
+        elif current_claim_info and not undo_claim_info:
+            # claim, abandon it
+            self.abandon_spent(current_claim_info.txid, current_claim_info.nout)
+        elif not current_claim_info and undo_claim_info:
+            # abandon, reclaim it (happens below)
+            pass
+        else:
+            # unexpected
+            raise Exception("Unexpected situation occurred on backup: undo info was empty while current one wasn't.")
+        if undo_claim_info:
+            self.put_claim_info(claim_id, undo_claim_info)
+            if undo_claim_info.cert_id:
+                cert_id = self._checksig(undo_claim_info.name, undo_claim_info.value, undo_claim_info.address)
+                self.put_claim_id_signed_by_cert_id(cert_id, undo_claim_info)
+            self.put_claim_for_name(undo_claim_info.name, claim_id)
+            self.put_claim_id_for_outpoint(undo_claim_info.txid, undo_claim_info.nout, claim_id)
 
     def backup_txs(self, txs):
         undo_info = msgpack.loads(self.claim_undo_db.get(struct.pack(">I", self.height)), use_list=False)
-        for claim_id, old_claim_info in reversed(undo_info):
-            self.backup_from_undo_info(claim_id, old_claim_info)
+        for claim_id, undo_claim_info in reversed(undo_info):
+            self.backup_from_undo_info(claim_id, undo_claim_info)
         return super().backup_txs(txs)
 
     def backup_claim_name(self, txid, nout):
