@@ -10,6 +10,8 @@ from urllib.request import urlopen
 import os
 import stat
 
+from tests.data.functional_claims import initial_claims
+
 
 def download_lbrycrdd(path):
     # TODO: get from lbrycrd repo when the changes are there
@@ -64,17 +66,38 @@ def setup_session(data_dir, rpc_port):
     return session
 
 
-@pytest.fixture(scope="module")
-def regtest_session(xprocess, tmpdir_factory):
+async def load_up_claims(daemon):
+    await daemon.generate(110)
+
+    for name, hexvalue in initial_claims:
+        await daemon.generate(1)
+        await daemon.claimname(name, hexvalue, 0.001)
+
+
+@pytest.mark.asyncio
+@pytest.fixture()
+async def regtest_session(xprocess, tmpdir_factory):
     rpc_port = 1337
+    lbrycrdd_data_dir = tmpdir_factory.mktemp('lbrycrdd_data', numbered=True).strpath
     class RegtestLbryStarter(ProcessStarter):
-        pattern = ".*Done\ loading.*"
+        pattern = ".*net\ thread.*"
         lbrycrdd_path = ensure_lbrycrdd()
-        data_path = "/tmp/regtest"
+        data_path = lbrycrdd_data_dir
         args = ['{}'.format(lbrycrdd_path), "-server", "-txindex", "-rpcuser=lbry", "-rpcpassword=lbry",
                 "-rpcport={}".format(rpc_port), "-datadir={}".format(data_path), "-printtoconsole", "-regtest"]
 
-    xprocess.ensure("lbrycrdd", RegtestLbryStarter)
-    xprocess.getinfo("lbrycrdd")
+    attempts = 3
+    while attempts:
+        try:
+            xprocess.ensure("lbrycrdd", RegtestLbryStarter)
+            break
+        except RuntimeError:
+            attempts -= 1
+            if not attempts:
+                xprocess.getinfo("lbrycrdd").terminate()
+                raise Exception("Failed to start lbrycrdd")
     data_dir = tmpdir_factory.mktemp('db', numbered=True).strpath
-    return setup_session(data_dir, 1337)
+    session = setup_session(data_dir, 1337)
+    await load_up_claims(session.daemon)
+    yield session
+    xprocess.getinfo("lbrycrdd").terminate()
