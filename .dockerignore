@@ -1,0 +1,6 @@
+*.pyc
+.eggs/
+build/
+_trial_temp/
+lbryumx.egg-info
+tests/
