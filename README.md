@@ -1,3 +1,6 @@
+[![Build Status](https://travis-ci.org/lbryio/lbryumx.svg?branch=master)](https://travis-ci.org/lbryio/lbryumx)
+[![Coverage Status](https://coveralls.io/repos/github/lbryio/lbryumx/badge.svg)](https://coveralls.io/github/lbryio/lbryumx)
+
 # LbryumX - The LBRY Electrum Protocol Server
 
 ![LbryumX running](images/screenshot.jpg "LbryumX screenshot")
