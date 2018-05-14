@@ -23,5 +23,5 @@ after_success:
   - if [[ $(python3 -V 2>&1) == *"Python 3.6"* ]]; then
       pip install python-coveralls;
       coveralls;
+      bash .update_image.sh;
     fi
-  - curl -H "Content-Type: application/json" --data '{"build": true}' -X POST $DOCKERHUB_TRIGGER_URL
