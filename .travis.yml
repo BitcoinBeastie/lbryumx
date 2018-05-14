@@ -10,10 +10,9 @@ before_install:
   - pushd leveldb-1.20 && make && sudo mv out-shared/libleveldb.* /usr/local/lib && sudo cp -R include/leveldb /usr/local/include && sudo ldconfig && popd
 python:
   - "3.6"
-  - "nightly"
 # command to install dependencies
 install:
-  - pip install -e https://github.com/lbryio/electrumx.git@packages#egg=electrumx
+  - pip install -e git+https://github.com/lbryio/electrumx.git@packages#egg=electrumx
   - pip install -r requirements.txt
   - pip install -e .
   - pip install pytest-cov pytest-xprocess
