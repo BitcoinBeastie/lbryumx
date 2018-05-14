@@ -7,6 +7,20 @@
 
 LbryumX is an extension of [electrumx](https://github.com/kyuupichan/electrumx) that provides the server side of LBRY Electrum Protocol.
 
+## Installing from Docker
+
+Installing from Docker is the best way to have a monitored and always up-to-date server. Watchtower ensures the Docker container will be running and checks for image updates every 5 minutes. To install it, just try:
+```bash
+sudo docker run -d --name watchtower  -v /var/run/docker.sock:/var/run/docker.sock   v2tec/watchtower --label-enable --cleanup
+```
+
+Then, start the server:
+```
+sudo docker run -v database:/database --ulimit nofile=90000:90000 -e DB_DIRECTORY=/database --net="host" -d --label=com.centurylinklabs.watchtower.enable=true lbry/lbryumx:latest
+```
+
+This will create a volume called database, set the number of open files higher, use the host networking and label it as a watchtower monitored container. For more information on the available environment variables, see [electrumx documentation](https://electrumx.readthedocs.io/en/latest/environment.html).
+
 ## Installation
 
 **fixme -- wip: explain further when released and packaging is in place**
