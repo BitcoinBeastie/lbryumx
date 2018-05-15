@@ -8,37 +8,66 @@
 
 LbryumX is an extension of [electrumx](https://github.com/kyuupichan/electrumx) that provides the server side of LBRY Electrum Protocol.
 
-## Installing from Docker
+## Running from Docker
 
 Installing from Docker is the best way to have a monitored and always up-to-date server. Watchtower ensures the Docker container will be running and checks for image updates every 5 minutes. To install it, just try:
 ```bash
-sudo docker run -d --name watchtower  -v /var/run/docker.sock:/var/run/docker.sock   v2tec/watchtower --label-enable --cleanup
+sudo docker run -d --name watchtower  -v /var/run/docker.sock:/var/run/docker.sock \
+    v2tec/watchtower --label-enable --cleanup
 ```
 
-Then, start the server:
+Then, [install and run lbrycrd](https://github.com/lbryio/lbrycrd#installation) with `-txindex`:
+```bash
+./lbrycrdd -server -txindex -rpcuser=lbry -rpcpassword=mySuperSecurePassword -port=19245
 ```
-sudo docker run -v database:/database --ulimit nofile=90000:90000 -e DB_DIRECTORY=/database --net="host" -d --label=com.centurylinklabs.watchtower.enable=true lbry/lbryumx:latest
+
+Finally, start the server:
+```
+sudo docker run -v database:/database --ulimit nofile=90000:90000 \
+    -e DB_DIRECTORY=/database --net="host" \
+    -e DAEMON_URL=http://lbry:mySuperSecurePassword@127.0.0.1:19245 \
+    -d --label=com.centurylinklabs.watchtower.enable=true lbry/lbryumx:latest
 ```
 
-This will create a volume called database, set the number of open files higher, use the host networking and label it as a watchtower monitored container. For more information on the available environment variables, see [electrumx documentation](https://electrumx.readthedocs.io/en/latest/environment.html).
+This will create a volume called database, set the number of open files higher, use the host networking, set the RPC URL and label it as a watchtower monitored container. For more information on the available environment variables, see [electrumx documentation](https://electrumx.readthedocs.io/en/latest/environment.html). Environment variables are set on the container using `-e` as you can see in the above command.
 
-## Installation
+## Installing from source on a Python virtual environment
 
-**fixme -- wip: explain further when released and packaging is in place**
+1. Make sure you have [Python 3.6 installed](https://docs.python.org/3/using/windows.html#installing-python).
+2. Create a new [virtual environment](http://docs.python-guide.org/en/latest/dev/virtualenvs/).
+3. Clone and install electrumx (this fork just makes it available as a module)
+    ```bash
+    $ git clone -b packages https://github.com/lbryio/electrumx.git electrumx
+    $ pip install -e electrumx/.
+    ```
+4. Clone and install lbryumx:
+    ```bash
+    $ git clone https://github.com/lbryio/lbryumx.git
+    $ pip install -r requirements.txt
+    $ pip install -e .
+    ```
 
 ## Usage
 
-**fixme -- wip: explain further when released and packaging is in place**
+Lbryumx connects to an instance of [lbrycrd](https://github.com/lbryio/lbrycrd#installation) and provides an electrum protocol server with wallet commands and custom commands for claims. For using it, you will need a [lbry daemon](https://github.com/lbryio/lbry/tree/master/lbrynet) or any [final release of the LBRY app](https://lbry.io/get).
 
 ### Example Usage
 
-**fixme -- wip: explain further when released and packaging is in place**
+Given that you have installed a [LBRY daemon](https://github.com/lbryio/lbry/tree/master/lbrynet) or a [LBRY app](https://lbry.io/get), edit `~/.lbrynet/daemon_settings.yml` for setting your server as the default one:
+```
+lbryum_servers:
+    - my.lbryumx.server:50001
+```
+Then start and use the app or daemon normally.
 
 ## Running from Source
 
-**fixme -- wip: explain further when released and packaging is in place**
+For running the server, all configurations are set over environment variables then we just run `lbryumx_server.py`, for instance:
+```
+TCP_PORT=50001 HOST=0.0.0.0 COIN=LBC DAEMON_URL=http://lbry:lbry@localhost:9245/ DB_DIRECTORY=/tmp/testx BANDWIDTH_LIMIT=10000 MAX_SESSIONS=1000 python3.6 lbryumx_server.py
+```
 
-If you encounter any errors, please check `doc/build-*.md` for further instructions. If you're still stuck, [create an issue](https://github.com/lbryio/lbryumx/issues/new) with the output of that command, your system info, and any other information you think might be helpful.
+If you're still stuck, [create an issue](https://github.com/lbryio/lbryumx/issues/new) with the output of that command, your system info, and any other information you think might be helpful.
 
 ## Contributing
 
@@ -56,7 +85,7 @@ lots of money.
 Developers are strongly encouraged to write [unit tests](/doc/unit-tests.md) for new code, and to
 submit new unit tests for old code. Unit tests can be run with: `py.test -v`
 
-The Travis CI system makes sure that every pull request is built, and that unit and sanity tests are automatically run.
+The Travis CI system makes sure that every pull request is built, and that unit and sanity tests are automatically run. Then, after a success round of tests, a new Docker image is published.
 
 ## License
 
