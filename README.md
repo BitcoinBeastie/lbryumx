@@ -1,5 +1,6 @@
 [![Build Status](https://travis-ci.org/lbryio/lbryumx.svg?branch=master)](https://travis-ci.org/lbryio/lbryumx)
 [![Coverage Status](https://coveralls.io/repos/github/lbryio/lbryumx/badge.svg)](https://coveralls.io/github/lbryio/lbryumx)
+[![Docker Automated build](https://img.shields.io/docker/build/lbry/lbryumx.svg)](https://hub.docker.com/r/lbry/lbryumx/builds/)
 
 # LbryumX - The LBRY Electrum Protocol Server
 
