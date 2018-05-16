@@ -3,9 +3,10 @@ import struct
 from electrumx.lib.script import ScriptPubKey, _match_ops, OpCodes
 from electrumx.lib.util import cachedproperty
 from electrumx.lib.hash import hash_to_str
+from hashlib import sha256
 from electrumx.lib.coins import Coin, CoinError
 
-from lbryumx.opcodes import decode_claim_script
+from lbryumx.opcodes import decode_claim_script, opcodes as lbry_opcodes
 
 
 class LBC(Coin):
@@ -22,8 +23,8 @@ class LBC(Coin):
     NET = "mainnet"
     BASIC_HEADER_SIZE = 112
     CHUNK_SIZE = 96
-    XPUB_VERBYTES = bytes.fromhex("0488b21e")
-    XPRV_VERBYTES = bytes.fromhex("0488ade4")
+    XPUB_VERBYTES = bytes.fromhex("019C354f")
+    XPRV_VERBYTES = bytes.fromhex("019C3118")
     P2PKH_VERBYTE = bytes.fromhex("55")
     P2SH_VERBYTES = bytes.fromhex("7A")
     WIF_BYTE = bytes.fromhex("1C")
@@ -106,6 +107,22 @@ class LBC(Coin):
         if ops and ops[0] == OpCodes.OP_RETURN:
             return None
         return None
+
+    @classmethod
+    def hashX_from_script(cls, script):
+        '''
+        Overrides electrumx hashX from script by extracting addresses from claim scripts.
+        '''
+        if script and script[0] == OpCodes.OP_RETURN:
+            return None
+        if script[0] in [
+            lbry_opcodes.OP_CLAIM_NAME,
+            lbry_opcodes.OP_SUPPORT_CLAIM,
+            lbry_opcodes.OP_UPDATE_CLAIM
+        ]:
+            return cls.address_to_hashX(cls.claim_address_handler(script))
+        else:
+            return sha256(script).digest()[:cls.HASHX_LEN]
 
 
 class LBCRegTest(LBC):
