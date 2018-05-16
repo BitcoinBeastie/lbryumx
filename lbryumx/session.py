@@ -31,9 +31,13 @@ class LBRYElectrumX(ElectrumX):
             'blockchain.claimtrie.getvalueforuri': self.claimtrie_getvalueforuri,
             'blockchain.claimtrie.getvaluesforuris': self.claimtrie_getvalueforuris,
             'blockchain.claimtrie.getclaimssignedbyid': self.claimtrie_getclaimssignedbyid,
-            'blockchain.block.get_server_height': self.get_server_height
+            'blockchain.block.get_server_height': self.get_server_height,
+            'blockchain.block.get_block': self.get_block,
         }
         self.electrumx_handlers.update(handlers)
+
+    async def get_block(self, block_hash):
+        return await self.daemon.deserialised_block(block_hash)
 
     def get_server_height(self):
         return self.bp.height
