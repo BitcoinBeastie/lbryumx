@@ -232,7 +232,7 @@ class LBRYElectrumX(ElectrumX):
                 channel_id = certificate['result']['claim_id']
                 claims_in_channel = await self.claimtrie_getclaimssignedbyid(channel_id)
                 result['unverified_claims_in_channel'] = {claim['claim_id']: (claim['name'], claim['height'])
-                                                          for claim in claims_in_channel}
+                                                          for claim in claims_in_channel if claim}
             elif certificate:
                 result['certificate'] = certificate
                 channel_id = certificate['result']['claim_id']
