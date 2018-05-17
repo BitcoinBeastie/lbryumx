@@ -3,13 +3,36 @@ from setuptools import setup
 setup(
     name='lbryumx',
     version='0.0.1',
-    python_requires='>=3.6',
-    install_requires=['msgpack', 'lbryschema', 'electrumx'],  # TODO: improve that
-    tests_require=['pytest-runner', 'pytest'],
-    packages=['lbryumx'],
     url='https://github.com/lbryio/lbryumx',
     license='MIT',
     author='LBRY Inc.',
     author_email='hello@lbry.io',
-    description='Server for the Electrum Lightweight LBRY Wallet'
+    description='Server for the LBRY Wallet.',
+    keywords='server,wallet,crypto,currency,money,bitcoin,lbry',
+    classifiers=(
+        'Intended Audience :: Developers',
+        'Intended Audience :: System Administrators',
+        'License :: OSI Approved :: MIT License',
+        'Programming Language :: Python :: 3',
+        'Operating System :: OS Independent',
+        'Topic :: Internet',
+        'Topic :: Software Development :: Libraries :: Python Modules',
+        'Topic :: System :: Distributed Computing',
+        'Topic :: Utilities',
+    ),
+    packages=('lbryumx',),
+    python_requires='>=3.6',
+    install_requires=(
+        'msgpack',
+        'lbryschema',
+        'electrumx',
+    ),
+    extras_require={
+        'test': (
+            'mock',
+            'pytest',
+            'pytest-asyncio',
+            'pytest-xprocess',
+        )
+    }
 )
