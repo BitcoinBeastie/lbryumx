@@ -59,19 +59,29 @@ def block_infos():
 
 def setup_session(data_dir, rpc_port):
     conf = {'DB_DIRECTORY': data_dir,
-            'DAEMON_URL': 'http://lbry:lbry@localhost:{}/'.format(rpc_port)}
+            'DAEMON_URL': 'http://lbry:lbry@localhost:{}/'.format(rpc_port),
+            'REORG_LIMIT': '100'}
     os.environ.update(conf)
     controller = Controller(Env(LBCRegTest))
     session = LBC.SESSIONCLS(controller, 'TCP')
+    session.bp.height = session.bp.db_height = 0
     return session
 
 
 async def load_up_claims(daemon):
-    await daemon.generate(110)
+    block_hashes = await daemon.generate(110)
 
     for name, hexvalue in initial_claims:
-        await daemon.generate(1)
         await daemon.claimname(name, hexvalue, 0.001)
+        block_hashes.extend(await daemon.generate(1))
+    raw_blocks = await daemon.raw_blocks(block_hashes)
+    await daemon.height()  # just to load up the cached height
+    return raw_blocks
+
+
+def advance_blocks(session, raw_blocks, initial_height=0):
+    blocks = [LBCRegTest.block(raw_block, i) for (i, raw_block) in enumerate(raw_blocks, start=initial_height)]
+    session.bp.advance_blocks(blocks)
 
 
 @pytest.mark.asyncio
@@ -98,6 +108,7 @@ async def regtest_session(xprocess, tmpdir_factory):
                 raise Exception("Failed to start lbrycrdd")
     data_dir = tmpdir_factory.mktemp('db', numbered=True).strpath
     session = setup_session(data_dir, 1337)
-    await load_up_claims(session.daemon)
+    raw_blocks = await load_up_claims(session.daemon)
+    advance_blocks(session, raw_blocks)
     yield session
     xprocess.getinfo("lbrycrdd").terminate()
