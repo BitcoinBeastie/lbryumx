@@ -33,6 +33,7 @@ setup(
             'pytest',
             'pytest-asyncio',
             'pytest-xprocess',
+            'pytest-cov',
         )
     }
 )
