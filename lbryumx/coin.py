@@ -126,8 +126,9 @@ class LBC(Coin):
 
 
 class LBCRegTest(LBC):
-    GENESIS_HASH = ('6e3fcf1299d4ec5d79c3a4c91d624a4acf9e2e173d95a1a0504f677669687556')
-    XPUB_VERBYTES = bytes.fromhex("0488b21e")
-    XPRV_VERBYTES = bytes.fromhex("0488ade4")
-    P2PKH_VERBYTE = bytes.fromhex("55")
-    P2SH_VERBYTES = bytes.fromhex("7A")
+    NET = "regtest"
+    GENESIS_HASH = '6e3fcf1299d4ec5d79c3a4c91d624a4acf9e2e173d95a1a0504f677669687556'
+    XPUB_VERBYTES = bytes.fromhex('043587cf')
+    XPRV_VERBYTES = bytes.fromhex('04358394')
+    P2PKH_VERBYTE = bytes.fromhex("6f")
+    P2SH_VERBYTES = bytes.fromhex("c4")
