@@ -51,10 +51,10 @@ class LBRYBlockProcessor(BlockProcessor):
             self.claim_undo_db = self.db_class('claim_undo', for_sync)
             log_reason('opened claim DBs', self.claims_db.for_sync)
 
-    def flush_utxos(self, utxo_batch):
+    def flush(self, flush_utxos=False):
         # flush claims together with utxos as they are parsed together
         self.batched_flush_claims()
-        return super().flush_utxos(utxo_batch)
+        return super().flush(flush_utxos=flush_utxos)
 
     def batched_flush_claims(self):
         with self.claims_db.write_batch() as claims_batch:
@@ -99,14 +99,13 @@ class LBRYBlockProcessor(BlockProcessor):
                 write_outpoint(key, claim_id)
             else:
                 delete_outpoint(key)
-        if self.claims_db.for_sync:
-            self.logger.info('flushed {:,d} blocks with {:,d} claims, {:,d} outpoints, {:,d} names '
-                             'and {:,d} certificates added while {:,d} were abandoned in {:.1f}s, committing...'
-                             .format(self.height - self.db_height,
-                                     len(self.claim_cache), len(self.outpoint_to_claim_id_cache),
-                                     len(self.claims_for_name_cache),
-                                     len(self.claims_signed_by_cert_cache), len(self.pending_abandons),
-                                     time.time() - flush_start))
+        self.logger.info('flushed {:,d} blocks with {:,d} claims, {:,d} outpoints, {:,d} names '
+                         'and {:,d} certificates added while {:,d} were abandoned in {:.1f}s, committing...'
+                         .format(self.height - self.db_height,
+                                 len(self.claim_cache), len(self.outpoint_to_claim_id_cache),
+                                 len(self.claims_for_name_cache),
+                                 len(self.claims_signed_by_cert_cache), len(self.pending_abandons),
+                                 time.time() - flush_start))
         self.claim_cache = {}
         self.claims_for_name_cache = {}
         self.claims_signed_by_cert_cache = {}
@@ -214,21 +213,32 @@ class LBRYBlockProcessor(BlockProcessor):
             # abandon, reclaim it (happens below)
             pass
         else:
-            # unexpected
-            raise Exception("Unexpected situation occurred on backup: undo info was empty while current one wasn't.")
+            # should never happen, unless the database got into an inconsistent state
+            raise Exception("Unexpected situation occurred on backup, this means the database is inconsistent. "
+                            "Please report. Resetting the data folder (reindex) solves it for now.")
         if undo_claim_info:
             self.put_claim_info(claim_id, undo_claim_info)
             if undo_claim_info.cert_id:
                 cert_id = self._checksig(undo_claim_info.name, undo_claim_info.value, undo_claim_info.address)
-                self.put_claim_id_signed_by_cert_id(cert_id, undo_claim_info)
+                self.put_claim_id_signed_by_cert_id(cert_id, claim_id)
             self.put_claim_for_name(undo_claim_info.name, claim_id)
             self.put_claim_id_for_outpoint(undo_claim_info.txid, undo_claim_info.nout, claim_id)
 
     def backup_txs(self, txs):
+        self.log_info("Reorg at height {} with {} transactions.".format(self.height, len(txs)))
         undo_info = msgpack.loads(self.claim_undo_db.get(struct.pack(">I", self.height)), use_list=False)
         for claim_id, undo_claim_info in reversed(undo_info):
             self.backup_from_undo_info(claim_id, undo_claim_info)
         return super().backup_txs(txs)
+
+    def backup_blocks(self, raw_blocks):
+        self.batched_flush_claims()
+        super().backup_blocks(raw_blocks=raw_blocks)
+        self.batched_flush_claims()
+
+    def shutdown(self, executor):
+        self.batched_flush_claims()
+        return super().shutdown(executor=executor)
 
     def backup_claim_name(self, txid, nout):
         self.abandon_spent(txid, nout)
@@ -274,13 +284,17 @@ class LBRYBlockProcessor(BlockProcessor):
     def abandon_spent(self, tx_hash, tx_idx):
         claim_id = self.get_claim_id_from_outpoint(tx_hash, tx_idx)
         if claim_id:
+            self.log_info("[!] Abandon: {}".format(hash_to_str(claim_id)))
             self.pending_abandons.setdefault(claim_id, []).append((tx_hash, tx_idx,))
             return claim_id
 
     def put_claim_id_for_outpoint(self, tx_hash, tx_idx, claim_id):
+        self.log_info("[+] Adding outpoint: {}:{} for {}.".format(hash_to_str(tx_hash), tx_idx,
+                                                                  hash_to_str(claim_id) if claim_id else None))
         self.outpoint_to_claim_id_cache[tx_hash + struct.pack('>I', tx_idx)] = claim_id
 
     def remove_claim_id_for_outpoint(self, tx_hash, tx_idx):
+        self.log_info("[-] Remove outpoint: {}:{}.".format(hash_to_str(tx_hash), tx_idx))
         self.outpoint_to_claim_id_cache[tx_hash + struct.pack('>I', tx_idx)] = None
 
     def get_claim_id_from_outpoint(self, tx_hash, tx_idx):
@@ -293,11 +307,13 @@ class LBRYBlockProcessor(BlockProcessor):
         return msgpack.loads(db_claims) if db_claims else {}
 
     def put_claim_for_name(self, name, claim_id):
+        self.log_info("[+] Adding claim {} for name {}.".format(hash_to_str(claim_id), name))
         claims = self.get_claims_for_name(name)
         claims.setdefault(claim_id, max(claims.values() or [0]) + 1)
         self.claims_for_name_cache[name] = claims
 
     def remove_claim_for_name(self, name, claim_id):
+        self.log_info("[-] Removing claim from name: {} - {}".format(hash_to_str(claim_id), name))
         claims = self.get_claims_for_name(name)
         claim_n = claims.pop(claim_id)
         for claim_id, number in claims.items():
@@ -311,14 +327,17 @@ class LBRYBlockProcessor(BlockProcessor):
         return msgpack.loads(db_claims, use_list=True) if db_claims else []
 
     def put_claim_id_signed_by_cert_id(self, cert_id, claim_id):
+        self.log_info("[+] Adding signature: {} - {}".format(hash_to_str(claim_id), hash_to_str(cert_id)))
         certs = self.get_signed_claim_ids_by_cert_id(cert_id)
         certs.append(claim_id)
         self.claims_signed_by_cert_cache[cert_id] = certs
 
     def remove_certificate(self, cert_id):
+        self.log_info("[-] Removing certificate: {}".format(hash_to_str(cert_id)))
         self.claims_signed_by_cert_cache[cert_id] = []
 
     def remove_claim_from_certificate_claims(self, cert_id, claim_id):
+        self.log_info("[-] Removing signature: {} - {}".format(hash_to_str(claim_id), hash_to_str(cert_id)))
         certs = self.get_signed_claim_ids_by_cert_id(cert_id)
         if claim_id in certs:
             certs.remove(claim_id)
@@ -329,6 +348,7 @@ class LBRYBlockProcessor(BlockProcessor):
         return ClaimInfo.from_serialized(serialized) if serialized else None
 
     def put_claim_info(self, claim_id, claim_info):
+        self.log_info("[+] Adding claim info for: {}".format(hash_to_str(claim_id)))
         self.claim_cache[claim_id] = claim_info.serialized
 
 def claim_id_hash(txid, n):
