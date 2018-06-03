@@ -9,6 +9,7 @@ before_install:
 
 install:
   - pip install -r requirements.txt
+  - pip install -r requirements_testing.txt
   - pip install -e .[test]
   - git clone https://github.com/lbryio/lbry.git --branch lbryum-refactor
   - pushd lbry && pip install -e . && popd
