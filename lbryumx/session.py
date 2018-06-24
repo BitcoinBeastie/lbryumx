@@ -217,6 +217,7 @@ class LBRYElectrumX(ElectrumX):
             for claim in claims['claims']:
                 if claim['claimId'] == claim_id:
                     claim['name'] = name
+                    self.log_warning('Recovered a claim missing from lbrycrd index: {} {}'.format(name, claim_id))
                     return claim
 
     async def claimtrie_getvalueforuri(self, block_hash, uri, known_certificates=None):
