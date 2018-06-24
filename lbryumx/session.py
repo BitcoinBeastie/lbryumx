@@ -288,11 +288,12 @@ class LBRYElectrumX(ElectrumX):
                 raw_claim_id = unhexlify(claim['result']['claim_id'])[::-1]
                 raw_certificate_id = self.bp.get_claim_info(raw_claim_id).cert_id
                 if raw_certificate_id:
-                    certtificate_id = hash_to_str(raw_certificate_id)
-                    certificate = await self.claimtrie_getclaimbyid(certtificate_id)
-                    certificate = {'resolution_type': CLAIM_ID,
-                                   'result': certificate}
-                    result['certificate'] = certificate
+                    certificate_id = hash_to_str(raw_certificate_id)
+                    certificate = await self.claimtrie_getclaimbyid(certificate_id)
+                    if certificate:
+                        certificate = {'resolution_type': CLAIM_ID,
+                                       'result': certificate}
+                        result['certificate'] = certificate
                 result['claim'] = claim
         return result
 
