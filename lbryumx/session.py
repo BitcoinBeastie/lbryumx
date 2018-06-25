@@ -1,4 +1,3 @@
-import asyncio
 from binascii import unhexlify, hexlify
 
 from electrumx.lib.hash import hash_to_str
@@ -8,7 +7,6 @@ from electrumx.lib.jsonrpc import RPCError
 
 from lbryschema.uri import parse_lbry_uri
 from lbryschema.error import URIParseError, DecodeError
-from lbryschema.decode import smart_decode
 
 
 class LBRYElectrumX(ElectrumX):
@@ -66,7 +64,7 @@ class LBRYElectrumX(ElectrumX):
     def get_claim_ids_signed_by(self, certificate_id):
         raw_certificate_id = unhexlify(certificate_id)[::-1]
         raw_claim_ids = self.bp.get_signed_claim_ids_by_cert_id(raw_certificate_id)
-        return map(hash_to_str, raw_claim_ids)
+        return list(map(hash_to_str, raw_claim_ids))
 
     def get_signed_claims_with_name_for_channel(self, channel_id, name):
         claim_ids_for_name = list(self.bp.get_claims_for_name(name.encode('ISO-8859-1')).keys())
@@ -100,6 +98,8 @@ class LBRYElectrumX(ElectrumX):
             if sequence:
                 claim_id = hexlify(raw_claim_id[::-1]).decode()
                 claim_info = await self.daemon.getclaimbyid(claim_id)
+                if not claim_info or not claim_info.get('value'):
+                    claim_info = await self.slow_get_claim_by_id_using_name(claim_id)
                 result['claim_sequence'] = sequence
                 result['claim_id'] = claim_id
                 supports = self.format_supports_from_daemon(claim_info.get('supports', []))  # fixme: lbrycrd#124
@@ -127,7 +127,14 @@ class LBRYElectrumX(ElectrumX):
 
     async def batched_formatted_claims_from_daemon(self, claim_ids):
         claims = await self.daemon.getclaimsbyids(claim_ids)
-        return list(map(self.format_claim_from_daemon, claims))
+        result = []
+        for claim, claim_id in zip(claims, claim_ids):
+            if claim and claim.get('value'):
+                result.append(self.format_claim_from_daemon(claim))
+            else:
+                recovered_claim = await self.slow_get_claim_by_id_using_name(claim_id)
+                result.append(self.format_claim_from_daemon(recovered_claim))
+        return result
 
     def format_claim_from_daemon(self, claim, name=None):
         '''Changes the returned claim data to the format expected by lbrynet and adds missing fields.'''
@@ -172,6 +179,8 @@ class LBRYElectrumX(ElectrumX):
     async def claimtrie_getclaimbyid(self, claim_id):
         self.assert_claim_id(claim_id)
         claim = await self.daemon.getclaimbyid(claim_id)
+        if not claim or not claim.get('value'):
+            claim = await self.slow_get_claim_by_id_using_name(claim_id)
         return self.format_claim_from_daemon(claim)
 
     async def claimtrie_getclaimsbyids(self, *claim_ids):
@@ -198,7 +207,20 @@ class LBRYElectrumX(ElectrumX):
             pass
         raise RPCError('{} should be a claim id hash'.format(value))
 
-    async def claimtrie_getvalueforuri(self, block_hash, uri):
+    async def slow_get_claim_by_id_using_name(self, claim_id):
+        # TODO: temporary workaround for a lbrycrd bug on indexing. Should be removed when it gets stable
+        raw_claim_id = unhexlify(claim_id)[::-1]
+        claim = self.bp.get_claim_info(raw_claim_id)
+        if claim:
+            name = claim.name.decode('ISO-8859-1')
+            claims = await self.daemon.getclaimsforname(name)
+            for claim in claims['claims']:
+                if claim['claimId'] == claim_id:
+                    claim['name'] = name
+                    self.log_warning('Recovered a claim missing from lbrycrd index: {} {}'.format(name, claim_id))
+                    return claim
+
+    async def claimtrie_getvalueforuri(self, block_hash, uri, known_certificates=None):
         # TODO: this thing is huge, refactor
         CLAIM_ID = "claim_id"
         WINNING = "winning"
@@ -266,11 +288,12 @@ class LBRYElectrumX(ElectrumX):
                 raw_claim_id = unhexlify(claim['result']['claim_id'])[::-1]
                 raw_certificate_id = self.bp.get_claim_info(raw_claim_id).cert_id
                 if raw_certificate_id:
-                    certtificate_id = hash_to_str(raw_certificate_id)
-                    certificate = await self.claimtrie_getclaimbyid(certtificate_id)
-                    certificate = {'resolution_type': CLAIM_ID,
-                                   'result': certificate}
-                    result['certificate'] = certificate
+                    certificate_id = hash_to_str(raw_certificate_id)
+                    certificate = await self.claimtrie_getclaimbyid(certificate_id)
+                    if certificate:
+                        certificate = {'resolution_type': CLAIM_ID,
+                                       'result': certificate}
+                        result['certificate'] = certificate
                 result['claim'] = claim
         return result
 
