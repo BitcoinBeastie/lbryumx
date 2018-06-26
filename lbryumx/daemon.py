@@ -17,6 +17,9 @@ def handles_errors(decorated_function):
 
 
 class LBCDaemon(Daemon):
+    @handles_errors
+    async def getrawtransaction(self, hex_hash, verbose=False):
+        return await super().getrawtransaction(hex_hash=hex_hash, verbose=verbose)
 
     @handles_errors
     async def getclaimbyid(self, claim_id):
