@@ -1,8 +1,6 @@
-import dbm
-import functools
-import msgpack
-
 from binascii import unhexlify, hexlify
+from beaker.cache import CacheManager
+from beaker.util import parse_cache_config_options
 
 from electrumx.lib.hash import hash_to_str
 from electrumx.server.session import ElectrumX
@@ -13,11 +11,25 @@ from lbryschema.uri import parse_lbry_uri
 from lbryschema.error import URIParseError, DecodeError
 
 
+def setup_caching(data_dir):
+    cache_opts = {
+        'cache.type': 'dbm',
+        'cache.data_dir': data_dir,
+        'cache.lock_dir': data_dir,
+        'cache.regions': 'short_term, long_term',
+        'cache.short_term.type': 'dbm',
+    }
+
+    cache_manager = CacheManager(**parse_cache_config_options(cache_opts))
+    short_term_cache = cache_manager.get_cache('short_term', expire=240)
+    return short_term_cache
+
+
 class LBRYElectrumX(ElectrumX):
 
     def __init__(self, *args, **kwargs):
-        self.cache = dbm.ndbm.open('/tmp/caching', 'c')
         super().__init__(*args, **kwargs)
+        self.cache = setup_caching(self.env.db_dir)
 
     def set_protocol_handlers(self, ptuple):
         super().set_protocol_handlers(ptuple)
@@ -228,7 +240,7 @@ class LBRYElectrumX(ElectrumX):
     async def claimtrie_getvalueforuri(self, block_hash, uri):
         key = str((block_hash, uri))
         if key in self.cache:
-            return msgpack.loads(self.cache[key], use_list=True, raw=False)
+            return self.cache[key]
         # TODO: this thing is huge, refactor
         CLAIM_ID = "claim_id"
         WINNING = "winning"
@@ -303,7 +315,7 @@ class LBRYElectrumX(ElectrumX):
                                        'result': certificate}
                         result['certificate'] = certificate
                 result['claim'] = claim
-        self.cache[key] = msgpack.dumps(result)
+        self.cache[key] = result
         return result
 
     async def claimtrie_getvalueforuris(self, block_hash, *uris):

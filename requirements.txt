@@ -1,3 +1,4 @@
 git+https://github.com/lbryio/lbryschema.git@master#egg=lbryschema
 git+https://github.com/lbryio/electrumx.git@packages#egg=electrumx
 msgpack==0.5.6
+beaker==1.10.0
