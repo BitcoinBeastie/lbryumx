@@ -1,7 +1,7 @@
 from functools import wraps
 
 from electrumx.server.daemon import Daemon, DaemonError
-from aiorpcx import RPCError
+from electrumx.lib.jsonrpc import RPCError
 
 
 def handles_errors(decorated_function):

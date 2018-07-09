@@ -11,20 +11,12 @@ install:
   - pip install -r requirements.txt
   - pip install -r requirements_testing.txt
   - pip install -e .[test]
-  - git clone https://github.com/lbryio/orchstr8.git
-  - git clone https://github.com/lbryio/torba.git
   - git clone https://github.com/lbryio/lbry.git --branch lbryum-refactor
-  - pushd torba && pip install -e . && popd
-  - pushd orchstr8 && pip install -e . && popd
   - pushd lbry && sed -e '/lbryschema/d' -i setup.py && pip install -e . && popd
-
-env:
-  - LEDGER=lbrynet.wallet
 
 script:
   - coverage run -p `which pytest` tests/
-  - PYTHONPATH=torba/tests coverage run -p -m twisted.trial --reactor=asyncio integration
-  - PYTHONPATH=lbry/lbrynet/tests/integration/ coverage run -p -m twisted.trial --reactor=asyncio wallet.test_transactions
+  - coverage run -p `which trial` --reactor=asyncio lbry/lbrynet/tests/integration/wallet/test*
 
 after_success:
   - coverage combine
