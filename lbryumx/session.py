@@ -3,7 +3,7 @@ from binascii import unhexlify, hexlify
 from electrumx.lib.hash import hash_to_str
 from electrumx.server.session import ElectrumX
 import electrumx.lib.util as util
-from electrumx.lib.jsonrpc import RPCError
+from aiorpcx import RPCError
 
 from lbryschema.uri import parse_lbry_uri
 from lbryschema.error import URIParseError, DecodeError
