@@ -133,7 +133,8 @@ class LBRYElectrumX(ElectrumX):
                 result.append(self.format_claim_from_daemon(claim))
             else:
                 recovered_claim = await self.slow_get_claim_by_id_using_name(claim_id)
-                result.append(self.format_claim_from_daemon(recovered_claim))
+                if recovered_claim:
+                    result.append(self.format_claim_from_daemon(recovered_claim))
         return result
 
     def format_claim_from_daemon(self, claim, name=None):
