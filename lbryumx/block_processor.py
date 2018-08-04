@@ -3,7 +3,7 @@ import struct
 import time
 
 import msgpack
-from electrumx.lib.hash import hash_to_str
+from electrumx.lib.hash import hash_to_hex_str
 
 from electrumx.server.block_processor import BlockProcessor
 from lbryschema.proto.claim_pb2 import Claim
@@ -26,7 +26,7 @@ class LBRYBlockProcessor(BlockProcessor):
         # stores deletes not yet flushed to disk
         self.pending_abandons = {}
         self.should_validate_signatures = self.env.boolean('VALIDATE_CLAIM_SIGNATURES', False)
-        self.log_info("LbryumX Block Processor - Validating signatures: {}".format(self.should_validate_signatures))
+        self.logger.info("LbryumX Block Processor - Validating signatures: {}".format(self.should_validate_signatures))
 
     def open_dbs(self):
         super().open_dbs()
@@ -155,7 +155,7 @@ class LBRYBlockProcessor(BlockProcessor):
                             update_inputs.add(update_input)
                             add_undo(self.advance_update_claim(output, height, txid, index))
                         else:
-                            info = (hash_to_str(txid), hash_to_str(claim.claim_id),)
+                            info = (hash_to_hex_str(txid), hash_to_hex_str(claim.claim_id),)
                             self.log_error("REJECTED: {} updating {}".format(*info))
                     elif isinstance(claim, ClaimSupport):
                         self.advance_support(claim, txid, index, height, output.value)
@@ -225,7 +225,7 @@ class LBRYBlockProcessor(BlockProcessor):
             self.put_claim_id_for_outpoint(undo_claim_info.txid, undo_claim_info.nout, claim_id)
 
     def backup_txs(self, txs):
-        self.log_info("Reorg at height {} with {} transactions.".format(self.height, len(txs)))
+        self.logger.info("Reorg at height {} with {} transactions.".format(self.height, len(txs)))
         undo_info = msgpack.loads(self.claim_undo_db.get(struct.pack(">I", self.height)), use_list=False)
         for claim_id, undo_claim_info in reversed(undo_info):
             self.backup_from_undo_info(claim_id, undo_claim_info)
@@ -284,17 +284,17 @@ class LBRYBlockProcessor(BlockProcessor):
     def abandon_spent(self, tx_hash, tx_idx):
         claim_id = self.get_claim_id_from_outpoint(tx_hash, tx_idx)
         if claim_id:
-            self.log_info("[!] Abandon: {}".format(hash_to_str(claim_id)))
+            self.logger.info("[!] Abandon: {}".format(hash_to_hex_str(claim_id)))
             self.pending_abandons.setdefault(claim_id, []).append((tx_hash, tx_idx,))
             return claim_id
 
     def put_claim_id_for_outpoint(self, tx_hash, tx_idx, claim_id):
-        self.log_info("[+] Adding outpoint: {}:{} for {}.".format(hash_to_str(tx_hash), tx_idx,
-                                                                  hash_to_str(claim_id) if claim_id else None))
+        self.logger.info("[+] Adding outpoint: {}:{} for {}.".format(hash_to_hex_str(tx_hash), tx_idx,
+                                                                     hash_to_hex_str(claim_id) if claim_id else None))
         self.outpoint_to_claim_id_cache[tx_hash + struct.pack('>I', tx_idx)] = claim_id
 
     def remove_claim_id_for_outpoint(self, tx_hash, tx_idx):
-        self.log_info("[-] Remove outpoint: {}:{}.".format(hash_to_str(tx_hash), tx_idx))
+        self.logger.info("[-] Remove outpoint: {}:{}.".format(hash_to_hex_str(tx_hash), tx_idx))
         self.outpoint_to_claim_id_cache[tx_hash + struct.pack('>I', tx_idx)] = None
 
     def get_claim_id_from_outpoint(self, tx_hash, tx_idx):
@@ -307,13 +307,13 @@ class LBRYBlockProcessor(BlockProcessor):
         return msgpack.loads(db_claims) if db_claims else {}
 
     def put_claim_for_name(self, name, claim_id):
-        self.log_info("[+] Adding claim {} for name {}.".format(hash_to_str(claim_id), name))
+        self.logger.info("[+] Adding claim {} for name {}.".format(hash_to_hex_str(claim_id), name))
         claims = self.get_claims_for_name(name)
         claims.setdefault(claim_id, max(claims.values() or [0]) + 1)
         self.claims_for_name_cache[name] = claims
 
     def remove_claim_for_name(self, name, claim_id):
-        self.log_info("[-] Removing claim from name: {} - {}".format(hash_to_str(claim_id), name))
+        self.logger.info("[-] Removing claim from name: {} - {}".format(hash_to_hex_str(claim_id), name))
         claims = self.get_claims_for_name(name)
         claim_n = claims.pop(claim_id)
         for claim_id, number in claims.items():
@@ -327,17 +327,17 @@ class LBRYBlockProcessor(BlockProcessor):
         return msgpack.loads(db_claims, use_list=True) if db_claims else []
 
     def put_claim_id_signed_by_cert_id(self, cert_id, claim_id):
-        self.log_info("[+] Adding signature: {} - {}".format(hash_to_str(claim_id), hash_to_str(cert_id)))
+        self.logger.info("[+] Adding signature: {} - {}".format(hash_to_hex_str(claim_id), hash_to_hex_str(cert_id)))
         certs = self.get_signed_claim_ids_by_cert_id(cert_id)
         certs.append(claim_id)
         self.claims_signed_by_cert_cache[cert_id] = certs
 
     def remove_certificate(self, cert_id):
-        self.log_info("[-] Removing certificate: {}".format(hash_to_str(cert_id)))
+        self.logger.info("[-] Removing certificate: {}".format(hash_to_hex_str(cert_id)))
         self.claims_signed_by_cert_cache[cert_id] = []
 
     def remove_claim_from_certificate_claims(self, cert_id, claim_id):
-        self.log_info("[-] Removing signature: {} - {}".format(hash_to_str(claim_id), hash_to_str(cert_id)))
+        self.logger.info("[-] Removing signature: {} - {}".format(hash_to_hex_str(claim_id), hash_to_hex_str(cert_id)))
         certs = self.get_signed_claim_ids_by_cert_id(cert_id)
         if claim_id in certs:
             certs.remove(claim_id)
@@ -348,7 +348,7 @@ class LBRYBlockProcessor(BlockProcessor):
         return ClaimInfo.from_serialized(serialized) if serialized else None
 
     def put_claim_info(self, claim_id, claim_info):
-        self.log_info("[+] Adding claim info for: {}".format(hash_to_str(claim_id)))
+        self.logger.info("[+] Adding claim info for: {}".format(hash_to_hex_str(claim_id)))
         self.claim_cache[claim_id] = claim_info.serialized
 
 def claim_id_hash(txid, n):

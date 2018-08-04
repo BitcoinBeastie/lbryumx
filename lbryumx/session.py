@@ -1,9 +1,9 @@
 from binascii import unhexlify, hexlify
 
-from electrumx.lib.hash import hash_to_str
+from aiorpcx import RPCError
+from electrumx.lib.hash import hash_to_hex_str
 from electrumx.server.session import ElectrumX
 import electrumx.lib.util as util
-from electrumx.lib.jsonrpc import RPCError
 
 from lbryschema.uri import parse_lbry_uri
 from lbryschema.error import URIParseError, DecodeError
@@ -64,11 +64,11 @@ class LBRYElectrumX(ElectrumX):
     def get_claim_ids_signed_by(self, certificate_id):
         raw_certificate_id = unhexlify(certificate_id)[::-1]
         raw_claim_ids = self.bp.get_signed_claim_ids_by_cert_id(raw_certificate_id)
-        return list(map(hash_to_str, raw_claim_ids))
+        return list(map(hash_to_hex_str, raw_claim_ids))
 
     def get_signed_claims_with_name_for_channel(self, channel_id, name):
         claim_ids_for_name = list(self.bp.get_claims_for_name(name.encode('ISO-8859-1')).keys())
-        claim_ids_for_name = set(map(hash_to_str, claim_ids_for_name))
+        claim_ids_for_name = set(map(hash_to_hex_str, claim_ids_for_name))
         channel_claim_ids = set(self.get_claim_ids_signed_by(channel_id))
         return claim_ids_for_name.intersection(channel_claim_ids)
 
@@ -76,7 +76,7 @@ class LBRYElectrumX(ElectrumX):
         n = int(n)
         for claim_id, sequence in self.bp.get_claims_for_name(name.encode('ISO-8859-1')).items():
             if n == sequence:
-                return await self.claimtrie_getclaimssignedbyid(hash_to_str(claim_id))
+                return await self.claimtrie_getclaimssignedbyid(hash_to_hex_str(claim_id))
 
     async def claimtrie_getclaimsintx(self, txid):
         # TODO: this needs further discussion.
@@ -112,7 +112,7 @@ class LBRYElectrumX(ElectrumX):
         n = int(n)
         for claim_id, sequence in self.bp.get_claims_for_name(name.encode('ISO-8859-1')).items():
             if n == sequence:
-                return await self.claimtrie_getclaimbyid(hash_to_str(claim_id))
+                return await self.claimtrie_getclaimbyid(hash_to_hex_str(claim_id))
 
     async def claimtrie_getclaimsforname(self, name):
         claims = await self.daemon.getclaimsforname(name)
@@ -289,7 +289,7 @@ class LBRYElectrumX(ElectrumX):
                 raw_claim_id = unhexlify(claim['result']['claim_id'])[::-1]
                 raw_certificate_id = self.bp.get_claim_info(raw_claim_id).cert_id
                 if raw_certificate_id:
-                    certificate_id = hash_to_str(raw_certificate_id)
+                    certificate_id = hash_to_hex_str(raw_certificate_id)
                     certificate = await self.claimtrie_getclaimbyid(certificate_id)
                     if certificate:
                         certificate = {'resolution_type': CLAIM_ID,

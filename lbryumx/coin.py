@@ -2,7 +2,7 @@ import struct
 
 from electrumx.lib.script import ScriptPubKey, _match_ops, OpCodes
 from electrumx.lib.util import cachedproperty
-from electrumx.lib.hash import hash_to_str
+from electrumx.lib.hash import hash_to_hex_str
 from hashlib import sha256
 from electrumx.lib.coins import Coin, CoinError
 
@@ -47,7 +47,7 @@ class LBC(Coin):
         Return the block less its unspendable coinbase.
         '''
         header = cls.block_header(block, 0)
-        header_hex_hash = hash_to_str(cls.header_hash(header))
+        header_hex_hash = hash_to_hex_str(cls.header_hash(header))
         if header_hex_hash != cls.GENESIS_HASH:
             raise CoinError('genesis block has hash {} expected {}'
                             .format(header_hex_hash, cls.GENESIS_HASH))
@@ -60,9 +60,9 @@ class LBC(Coin):
         timestamp, bits, nonce = struct.unpack('<III', header[100:112])
         return {
             'version': version,
-            'prev_block_hash': hash_to_str(header[4:36]),
-            'merkle_root': hash_to_str(header[36:68]),
-            'claim_trie_root': hash_to_str(header[68:100]),
+            'prev_block_hash': hash_to_hex_str(header[4:36]),
+            'merkle_root': hash_to_hex_str(header[36:68]),
+            'claim_trie_root': hash_to_hex_str(header[68:100]),
             'timestamp': timestamp,
             'bits': bits,
             'nonce': nonce,

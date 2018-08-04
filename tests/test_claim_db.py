@@ -1,11 +1,3 @@
-import json
-from binascii import hexlify
-
-from electrumx.lib.hash import hash_to_str
-
-from lbryumx.model import ClaimInfo
-
-
 def test_claim_sequence_remove_reorders(block_processor):
     name, db = b'name', block_processor
     db.put_claim_for_name(name, b'id1')
