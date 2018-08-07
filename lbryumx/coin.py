@@ -36,8 +36,6 @@ class LBC(Coin):
     RPC_PORT = 9245
     REORG_LIMIT = 200
     PEERS = [
-        'lbryum8.lbry.io t',
-        'lbryum9.lbry.io t',
     ]
 
     @classmethod

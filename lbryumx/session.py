@@ -10,12 +10,16 @@ from lbryschema.error import URIParseError, DecodeError
 
 
 class LBRYElectrumX(ElectrumX):
+    PROTOCOL_MIN = (0, 0)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # fixme: this is a rebase hack, we need to go through ChainState instead later
+        self.daemon = self.chain_state._daemon
+        self.bp = self.chain_state._bp
 
-    def set_protocol_handlers(self, ptuple):
-        super().set_protocol_handlers(ptuple)
+    def set_request_handlers(self, ptuple):
+        super().set_request_handlers(ptuple)
         handlers = {
             'blockchain.transaction.get_height': self.transaction_get_height,
             'blockchain.claimtrie.getclaimbyid': self.claimtrie_getclaimbyid,
@@ -32,12 +36,12 @@ class LBRYElectrumX(ElectrumX):
             'blockchain.block.get_server_height': self.get_server_height,
             'blockchain.block.get_block': self.get_block,
         }
-        self.electrumx_handlers.update(handlers)
+        self.request_handlers.update(handlers)
 
     async def get_block(self, block_hash):
         return await self.daemon.deserialised_block(block_hash)
 
-    def get_server_height(self):
+    async def get_server_height(self):
         return self.bp.height
 
     async def transaction_get_height(self, tx_hash):
