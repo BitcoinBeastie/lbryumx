@@ -1,3 +1,4 @@
+import math
 from binascii import unhexlify, hexlify
 
 from aiorpcx import RPCError
@@ -10,7 +11,8 @@ from lbryschema.error import URIParseError, DecodeError
 
 
 class LBRYElectrumX(ElectrumX):
-    PROTOCOL_MIN = (0, 0)
+    PROTOCOL_MIN = (0, 0)  # temporary, for supporting 0.10 protocol
+    max_errors = math.inf  # don't disconnect people for errors! let them happen...
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
