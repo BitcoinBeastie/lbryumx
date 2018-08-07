@@ -105,7 +105,7 @@ class LBRYElectrumX(ElectrumX):
                 supports = self.format_supports_from_daemon(claim_info.get('supports', []))  # fixme: lbrycrd#124
                 result['supports'] = supports
             else:
-                self.log_warning('tx has no claims in db: {} {}'.format(tx_hash, nout))
+                self.logger.warning('tx has no claims in db: {} {}'.format(tx_hash, nout))
         return result
 
     async def claimtrie_getnthclaimforname(self, name, n):
@@ -218,7 +218,7 @@ class LBRYElectrumX(ElectrumX):
             for claim in claims['claims']:
                 if claim['claimId'] == claim_id:
                     claim['name'] = name
-                    self.log_warning('Recovered a claim missing from lbrycrd index: {} {}'.format(name, claim_id))
+                    self.logger.warning('Recovered a claim missing from lbrycrd index: {} {}'.format(name, claim_id))
                     return claim
 
     async def claimtrie_getvalueforuri(self, block_hash, uri, known_certificates=None):

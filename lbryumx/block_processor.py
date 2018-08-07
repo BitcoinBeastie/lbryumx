@@ -28,28 +28,27 @@ class LBRYBlockProcessor(BlockProcessor):
         self.should_validate_signatures = self.env.boolean('VALIDATE_CLAIM_SIGNATURES', False)
         self.logger.info("LbryumX Block Processor - Validating signatures: {}".format(self.should_validate_signatures))
 
-    def open_dbs(self):
-        super().open_dbs()
+    async def _open_dbs(self, for_sync):
+        await super()._open_dbs(for_sync=for_sync)
         def log_reason(message, is_for_sync):
             reason = 'sync' if is_for_sync else 'serving'
             self.logger.info('{} for {}'.format(message, reason))
 
-        for for_sync in [False, True]:
-            if self.claims_db:
-                if self.claims_db.for_sync == for_sync:
-                    return
-                log_reason('closing claim DBs to re-open', for_sync)
-                self.claims_db.close()
-                self.names_db.close()
-                self.signatures_db.close()
-                self.outpoint_to_claim_id_db.close()
-                self.claim_undo_db.close()
-            self.claims_db = self.db_class('claims', for_sync)
-            self.names_db = self.db_class('names', for_sync)
-            self.signatures_db = self.db_class('signatures', for_sync)
-            self.outpoint_to_claim_id_db = self.db_class('outpoint_claim_id', for_sync)
-            self.claim_undo_db = self.db_class('claim_undo', for_sync)
-            log_reason('opened claim DBs', self.claims_db.for_sync)
+        if self.claims_db:
+            if self.claims_db.for_sync == for_sync:
+                return
+            log_reason('closing claim DBs to re-open', for_sync)
+            self.claims_db.close()
+            self.names_db.close()
+            self.signatures_db.close()
+            self.outpoint_to_claim_id_db.close()
+            self.claim_undo_db.close()
+        self.claims_db = self.db_class('claims', for_sync)
+        self.names_db = self.db_class('names', for_sync)
+        self.signatures_db = self.db_class('signatures', for_sync)
+        self.outpoint_to_claim_id_db = self.db_class('outpoint_claim_id', for_sync)
+        self.claim_undo_db = self.db_class('claim_undo', for_sync)
+        log_reason('opened claim DBs', self.claims_db.for_sync)
 
     def flush(self, flush_utxos=False):
         # flush claims together with utxos as they are parsed together
@@ -156,7 +155,7 @@ class LBRYBlockProcessor(BlockProcessor):
                             add_undo(self.advance_update_claim(output, height, txid, index))
                         else:
                             info = (hash_to_hex_str(txid), hash_to_hex_str(claim.claim_id),)
-                            self.log_error("REJECTED: {} updating {}".format(*info))
+                            self.logger.error("REJECTED: {} updating {}".format(*info))
                     elif isinstance(claim, ClaimSupport):
                         self.advance_support(claim, txid, index, height, output.value)
             for txin in tx.inputs:

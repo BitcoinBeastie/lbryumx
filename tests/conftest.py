@@ -1,3 +1,4 @@
+import asyncio
 import json
 import pytest
 from electrumx.server.controller import Controller
@@ -31,12 +32,14 @@ def ensure_lbrycrdd():
 
 
 @pytest.fixture()
-def block_processor(tmpdir_factory):
+async def block_processor(tmpdir_factory):
     environ.clear()
     environ['DB_DIRECTORY'] = tmpdir_factory.mktemp('db', numbered=True).strpath
     environ['DAEMON_URL'] = ''
     env = Env(LBC)
     bp = LBC.BLOCK_PROCESSOR(env, None, None)
+    await bp._first_open_dbs()
+    bp._caught_up_event = asyncio.Event()
     yield bp
     for attr in dir(bp):  # hack to close dbs on tear down
         obj = getattr(bp, attr)

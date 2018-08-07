@@ -2,7 +2,7 @@ import struct
 
 from electrumx.lib.script import ScriptPubKey, _match_ops, OpCodes
 from electrumx.lib.util import cachedproperty
-from electrumx.lib.hash import hash_to_hex_str
+from electrumx.lib.hash import hash_to_hex_str, HASHX_LEN
 from hashlib import sha256
 from electrumx.lib.coins import Coin, CoinError
 
@@ -122,7 +122,7 @@ class LBC(Coin):
         ]:
             return cls.address_to_hashX(cls.claim_address_handler(script))
         else:
-            return sha256(script).digest()[:cls.HASHX_LEN]
+            return sha256(script).digest()[:HASHX_LEN]
 
 
 class LBCRegTest(LBC):
