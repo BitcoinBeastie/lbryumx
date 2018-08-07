@@ -40,6 +40,13 @@ class LBRYElectrumX(ElectrumX):
         }
         self.request_handlers.update(handlers)
 
+    async def transaction_get(self, tx_hash, verbose=False):
+        # fixme: workaround for lbryum sending the height instead of True/False.
+        # fixme: lbryum_server ignored that and always used False, but this is out of spec
+        if verbose not in (True, False):
+            verbose = False
+        return await self.daemon_request('getrawtransaction', tx_hash, verbose)
+
     async def get_block(self, block_hash):
         return await self.daemon.deserialised_block(block_hash)
 
