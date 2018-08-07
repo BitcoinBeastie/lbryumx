@@ -1,3 +1,3 @@
 git+https://github.com/lbryio/lbryschema.git@master#egg=lbryschema
-git+https://github.com/lbryio/electrumx.git@packages#egg=electrumx
+git+https://github.com/lbryio/electrumx.git@1.8#egg=electrumx
 msgpack==0.5.6

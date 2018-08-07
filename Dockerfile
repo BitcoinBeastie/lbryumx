@@ -26,7 +26,7 @@ RUN python3.7 -m pip install --upgrade pip setuptools
 
 # get our electrumx packages branch
 RUN mkdir projects/
-RUN git clone -b master https://github.com/kyuupichan/electrumx.git projects/electrumx
+RUN git clone -b 1.8 https://github.com/lbryio/electrumx.git projects/electrumx
 RUN python3.7 -m pip install --user -e projects/electrumx/.
 
 # get lbryumx
