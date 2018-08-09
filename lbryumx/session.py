@@ -19,6 +19,8 @@ class LBRYElectrumX(ElectrumX):
         # fixme: this is a rebase hack, we need to go through ChainState instead later
         self.daemon = self.chain_state._daemon
         self.bp = self.chain_state._bp
+        # fixme: lbryum specific subscribe
+        self.subscribe_height = False
 
     def set_request_handlers(self, ptuple):
         super().set_request_handlers(ptuple)
@@ -38,7 +40,59 @@ class LBRYElectrumX(ElectrumX):
             'blockchain.block.get_server_height': self.get_server_height,
             'blockchain.block.get_block': self.get_block,
         }
+        # fixme: methods we use but shouldnt be using anymore. To be removed when torba goes out
+        handlers.update({
+            'blockchain.numblocks.subscribe': self.numblocks_subscribe,
+            'blockchain.utxo.get_address': self.utxo_get_address,
+            'blockchain.transaction.broadcast':
+                self.transaction_broadcast_1_0,
+            'blockchain.transaction.get': self.transaction_get,
+        })
         self.request_handlers.update(handlers)
+
+    async def utxo_get_address(self, tx_hash, index):
+        # fixme: lbryum
+        # Used only for electrum client command-line requests.  We no
+        # longer index by address, so need to request the raw
+        # transaction.  So it works for any TXO not just UTXOs.
+        self.assert_tx_hash(tx_hash)
+        try:
+            index = int(index)
+            if index < 0:
+                raise ValueError
+        except ValueError:
+            raise RPCError("index has to be >= 0 and integer")
+        raw_tx = await self.daemon_request('getrawtransaction', tx_hash)
+        if not raw_tx:
+            return None
+        raw_tx = util.hex_to_bytes(raw_tx)
+        tx = self.coin.DESERIALIZER(raw_tx).read_tx()
+        if index >= len(tx.outputs):
+            return None
+        return self.coin.address_from_script(tx.outputs[index].pk_script)
+
+    async def transaction_broadcast_1_0(self, raw_tx):
+        # fixme: lbryum
+        # An ugly API: current Electrum clients only pass the raw
+        # transaction in hex and expect error messages to be returned in
+        # the result field.  And the server shouldn't be doing the client's
+        # user interface job here.
+        try:
+            return await self.transaction_broadcast(raw_tx)
+        except RPCError as e:
+            return e.message
+
+    async def numblocks_subscribe(self):
+        # fixme workaround for lbryum
+        '''Subscribe to get height of new blocks.'''
+        self.subscribe_height = True
+        return self.bp.height
+
+    async def notify(self, height, touched):
+        # fixme workaround for lbryum
+        await super().notify(height, touched)
+        if self.subscribe_height and height != self.notified_height:
+            self.send_notification('blockchain.numblocks.subscribe', (height,))
 
     async def transaction_get(self, tx_hash, verbose=False):
         # fixme: workaround for lbryum sending the height instead of True/False.
