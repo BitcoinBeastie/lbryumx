@@ -1,7 +1,7 @@
 from hashlib import sha256
 from random import getrandbits
 
-from electrumx.lib.hash import hash_to_str
+from electrumx.lib.hash import hash_to_hex_str
 from electrumx.lib.tx import TxInput
 from lbryschema.decode import smart_decode
 from lbryschema.schema import SECP256k1
@@ -111,7 +111,7 @@ def create_cert():
 
 def sign_claim(private_key, raw_claim, address, claim_id):
     claim = smart_decode(raw_claim)
-    return claim.sign(private_key, address, hash_to_str(claim_id), curve=SECP256k1)
+    return claim.sign(private_key, address, hash_to_hex_str(claim_id), curve=SECP256k1)
 
 
 def create_claim_output(address, name, value, key=None, cert_id=None):

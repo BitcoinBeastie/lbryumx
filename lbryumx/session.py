@@ -1,21 +1,29 @@
+import math
 from binascii import unhexlify, hexlify
 
-from electrumx.lib.hash import hash_to_str
+from aiorpcx import RPCError
+from electrumx.lib.hash import hash_to_hex_str
 from electrumx.server.session import ElectrumX
 import electrumx.lib.util as util
-from electrumx.lib.jsonrpc import RPCError
 
 from lbryschema.uri import parse_lbry_uri
 from lbryschema.error import URIParseError, DecodeError
 
 
 class LBRYElectrumX(ElectrumX):
+    PROTOCOL_MIN = (0, 0)  # temporary, for supporting 0.10 protocol
+    max_errors = math.inf  # don't disconnect people for errors! let them happen...
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # fixme: this is a rebase hack, we need to go through ChainState instead later
+        self.daemon = self.chain_state._daemon
+        self.bp = self.chain_state._bp
+        # fixme: lbryum specific subscribe
+        self.subscribe_height = False
 
-    def set_protocol_handlers(self, ptuple):
-        super().set_protocol_handlers(ptuple)
+    def set_request_handlers(self, ptuple):
+        super().set_request_handlers(ptuple)
         handlers = {
             'blockchain.transaction.get_height': self.transaction_get_height,
             'blockchain.claimtrie.getclaimbyid': self.claimtrie_getclaimbyid,
@@ -32,12 +40,71 @@ class LBRYElectrumX(ElectrumX):
             'blockchain.block.get_server_height': self.get_server_height,
             'blockchain.block.get_block': self.get_block,
         }
-        self.electrumx_handlers.update(handlers)
+        # fixme: methods we use but shouldnt be using anymore. To be removed when torba goes out
+        handlers.update({
+            'blockchain.numblocks.subscribe': self.numblocks_subscribe,
+            'blockchain.utxo.get_address': self.utxo_get_address,
+            'blockchain.transaction.broadcast':
+                self.transaction_broadcast_1_0,
+            'blockchain.transaction.get': self.transaction_get,
+        })
+        self.request_handlers.update(handlers)
+
+    async def utxo_get_address(self, tx_hash, index):
+        # fixme: lbryum
+        # Used only for electrum client command-line requests.  We no
+        # longer index by address, so need to request the raw
+        # transaction.  So it works for any TXO not just UTXOs.
+        self.assert_tx_hash(tx_hash)
+        try:
+            index = int(index)
+            if index < 0:
+                raise ValueError
+        except ValueError:
+            raise RPCError("index has to be >= 0 and integer")
+        raw_tx = await self.daemon_request('getrawtransaction', tx_hash)
+        if not raw_tx:
+            return None
+        raw_tx = util.hex_to_bytes(raw_tx)
+        tx = self.coin.DESERIALIZER(raw_tx).read_tx()
+        if index >= len(tx.outputs):
+            return None
+        return self.coin.address_from_script(tx.outputs[index].pk_script)
+
+    async def transaction_broadcast_1_0(self, raw_tx):
+        # fixme: lbryum
+        # An ugly API: current Electrum clients only pass the raw
+        # transaction in hex and expect error messages to be returned in
+        # the result field.  And the server shouldn't be doing the client's
+        # user interface job here.
+        try:
+            return await self.transaction_broadcast(raw_tx)
+        except RPCError as e:
+            return e.message
+
+    async def numblocks_subscribe(self):
+        # fixme workaround for lbryum
+        '''Subscribe to get height of new blocks.'''
+        self.subscribe_height = True
+        return self.bp.height
+
+    async def notify(self, height, touched):
+        # fixme workaround for lbryum
+        await super().notify(height, touched)
+        if self.subscribe_height and height != self.notified_height:
+            self.send_notification('blockchain.numblocks.subscribe', (height,))
+
+    async def transaction_get(self, tx_hash, verbose=False):
+        # fixme: workaround for lbryum sending the height instead of True/False.
+        # fixme: lbryum_server ignored that and always used False, but this is out of spec
+        if verbose not in (True, False):
+            verbose = False
+        return await self.daemon_request('getrawtransaction', tx_hash, verbose)
 
     async def get_block(self, block_hash):
         return await self.daemon.deserialised_block(block_hash)
 
-    def get_server_height(self):
+    async def get_server_height(self):
         return self.bp.height
 
     async def transaction_get_height(self, tx_hash):
@@ -64,11 +131,11 @@ class LBRYElectrumX(ElectrumX):
     def get_claim_ids_signed_by(self, certificate_id):
         raw_certificate_id = unhexlify(certificate_id)[::-1]
         raw_claim_ids = self.bp.get_signed_claim_ids_by_cert_id(raw_certificate_id)
-        return list(map(hash_to_str, raw_claim_ids))
+        return list(map(hash_to_hex_str, raw_claim_ids))
 
     def get_signed_claims_with_name_for_channel(self, channel_id, name):
         claim_ids_for_name = list(self.bp.get_claims_for_name(name.encode('ISO-8859-1')).keys())
-        claim_ids_for_name = set(map(hash_to_str, claim_ids_for_name))
+        claim_ids_for_name = set(map(hash_to_hex_str, claim_ids_for_name))
         channel_claim_ids = set(self.get_claim_ids_signed_by(channel_id))
         return claim_ids_for_name.intersection(channel_claim_ids)
 
@@ -76,7 +143,7 @@ class LBRYElectrumX(ElectrumX):
         n = int(n)
         for claim_id, sequence in self.bp.get_claims_for_name(name.encode('ISO-8859-1')).items():
             if n == sequence:
-                return await self.claimtrie_getclaimssignedbyid(hash_to_str(claim_id))
+                return await self.claimtrie_getclaimssignedbyid(hash_to_hex_str(claim_id))
 
     async def claimtrie_getclaimsintx(self, txid):
         # TODO: this needs further discussion.
@@ -105,14 +172,14 @@ class LBRYElectrumX(ElectrumX):
                 supports = self.format_supports_from_daemon(claim_info.get('supports', []))  # fixme: lbrycrd#124
                 result['supports'] = supports
             else:
-                self.log_warning('tx has no claims in db: {} {}'.format(tx_hash, nout))
+                self.logger.warning('tx has no claims in db: {} {}'.format(tx_hash, nout))
         return result
 
     async def claimtrie_getnthclaimforname(self, name, n):
         n = int(n)
         for claim_id, sequence in self.bp.get_claims_for_name(name.encode('ISO-8859-1')).items():
             if n == sequence:
-                return await self.claimtrie_getclaimbyid(hash_to_str(claim_id))
+                return await self.claimtrie_getclaimbyid(hash_to_hex_str(claim_id))
 
     async def claimtrie_getclaimsforname(self, name):
         claims = await self.daemon.getclaimsforname(name)
@@ -218,7 +285,7 @@ class LBRYElectrumX(ElectrumX):
             for claim in claims['claims']:
                 if claim['claimId'] == claim_id:
                     claim['name'] = name
-                    self.log_warning('Recovered a claim missing from lbrycrd index: {} {}'.format(name, claim_id))
+                    self.logger.warning('Recovered a claim missing from lbrycrd index: {} {}'.format(name, claim_id))
                     return claim
 
     async def claimtrie_getvalueforuri(self, block_hash, uri, known_certificates=None):
@@ -289,7 +356,7 @@ class LBRYElectrumX(ElectrumX):
                 raw_claim_id = unhexlify(claim['result']['claim_id'])[::-1]
                 raw_certificate_id = self.bp.get_claim_info(raw_claim_id).cert_id
                 if raw_certificate_id:
-                    certificate_id = hash_to_str(raw_certificate_id)
+                    certificate_id = hash_to_hex_str(raw_certificate_id)
                     certificate = await self.claimtrie_getclaimbyid(certificate_id)
                     if certificate:
                         certificate = {'resolution_type': CLAIM_ID,

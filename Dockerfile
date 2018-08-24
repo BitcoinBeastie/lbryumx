@@ -1,6 +1,6 @@
-# buster is the only one so far that has python3.6
+# buster is the only one so far that has python3.7
 FROM debian:buster-slim
-#FROM python:3.6-slim-stretch
+#FROM python:3.7-slim-stretch
 
 ARG user=lbry
 
@@ -10,7 +10,7 @@ RUN mkdir -p /home/$user/
 RUN chown -R $user:$user /home/$user/
 
 # install python, pip, git and clean up
-RUN apt-get update && apt-get -y --no-install-recommends install git python3.6 python3.6-dev python3-pip && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get -y --no-install-recommends install git python3.7 python3.7-dev python3-pip && rm -rf /var/lib/apt/lists/*
 
 # create and chown database dir
 ARG db_dir=/database
@@ -22,12 +22,12 @@ USER $user
 WORKDIR /home/$user
 
 # RUN pip3 install -U pip (broken on pip 10 https://github.com/pypa/pip/issues/5240)
-RUN python3.6 -m pip install --upgrade pip setuptools
+RUN python3.7 -m pip install --upgrade pip setuptools
 
 # get our electrumx packages branch
 RUN mkdir projects/
-RUN git clone -b packages https://github.com/lbryio/electrumx.git projects/electrumx
-RUN python3.6 -m pip install --user -e projects/electrumx/.
+RUN git clone -b 1.8 https://github.com/lbryio/electrumx.git projects/electrumx
+RUN python3.7 -m pip install --user -e projects/electrumx/.
 
 # get lbryumx
 COPY . projects/lbryumx
@@ -35,8 +35,8 @@ USER root
 RUN chown -R $user:$user .
 USER $user
 WORKDIR projects/lbryumx
-RUN python3.6 -m pip install --user -r requirements.txt
-RUN python3.6 -m pip install --user -e . && rm ~/.cache -rf
+RUN python3.7 -m pip install --user -r requirements.txt
+RUN python3.7 -m pip install --user -e . && rm ~/.cache -rf
 
 # entry point
 ARG host=0.0.0.0
@@ -50,5 +50,5 @@ ENV DAEMON_URL=$daemon_url
 ENV DB_DIRECTORY=$db_dir
 ENV BANDWIDTH_LIMIT=1000000000000000000000000000000000000000000
 ENV MAX_SESSIONS=1000000000
-ENTRYPOINT ["python3.6"]
+ENTRYPOINT ["python3.7"]
 CMD ["lbryumx_server.py"]

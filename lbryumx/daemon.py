@@ -1,7 +1,7 @@
+from aiorpcx import RPCError
 from functools import wraps
 
 from electrumx.server.daemon import Daemon, DaemonError
-from electrumx.lib.jsonrpc import RPCError
 
 
 def handles_errors(decorated_function):
@@ -12,7 +12,7 @@ def handles_errors(decorated_function):
         except DaemonError as daemon_error:
             error_dict = daemon_error.args[0]
             message, code = error_dict['message'], error_dict['code']
-            raise RPCError(message, code=code)
+            raise RPCError(code=code, message=message)
     return wrapper
 
 
