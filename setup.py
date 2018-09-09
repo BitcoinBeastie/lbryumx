@@ -25,7 +25,7 @@ setup(
     install_requires=(
         'msgpack',
         'lbryschema',
-        'electrumx',
+        'electrumx==1.8.2',
     ),
     extras_require={
         'test': (
