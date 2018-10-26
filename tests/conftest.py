@@ -2,6 +2,7 @@ import asyncio
 import json
 import pytest
 from electrumx.server.controller import Controller
+from electrumx.server.db import DB
 from xprocess import ProcessStarter
 from os import environ
 from lbryumx.coin import LBC, LBCRegTest
@@ -37,7 +38,7 @@ async def block_processor(tmpdir_factory):
     environ['DB_DIRECTORY'] = tmpdir_factory.mktemp('db', numbered=True).strpath
     environ['DAEMON_URL'] = ''
     env = Env(LBC)
-    bp = LBC.BLOCK_PROCESSOR(env, None, None)
+    bp = LBC.BLOCK_PROCESSOR(env, DB(env), None, None)
     await bp._first_open_dbs()
     bp._caught_up_event = asyncio.Event()
     yield bp
