@@ -29,9 +29,7 @@ class LBRYBlockProcessor(BlockProcessor):
         for index, block in enumerate(blocks):
             undo = self.advance_claim_txs(block.transactions, height + index)
             pending_undo.append((height+index, undo,))
-        with self.claim_undo_db.write_batch() as writer:
-            for height, undo_info in pending_undo:
-                writer.put(struct.pack(">I", height), msgpack.dumps(undo_info))
+        self.db.write_undo(pending_undo)
 
     def advance_claim_txs(self, txs, height):
         # TODO: generate claim undo info!
@@ -46,7 +44,7 @@ class LBRYBlockProcessor(BlockProcessor):
                     if isinstance(claim, NameClaim):
                         add_undo(self.advance_claim_name_transaction(output, height, txid, index))
                     elif isinstance(claim, ClaimUpdate):
-                        update_input = self.get_update_input(claim, tx.inputs)
+                        update_input = self.db.get_update_input(claim, tx.inputs)
                         if update_input:
                             update_inputs.add(update_input)
                             add_undo(self.advance_update_claim(output, height, txid, index))
@@ -57,32 +55,32 @@ class LBRYBlockProcessor(BlockProcessor):
                         self.advance_support(claim, txid, index, height, output.value)
             for txin in tx.inputs:
                 if txin not in update_inputs:
-                    abandoned_claim_id = self.abandon_spent(txin.prev_hash, txin.prev_idx)
+                    abandoned_claim_id = self.db.abandon_spent(txin.prev_hash, txin.prev_idx)
                     if abandoned_claim_id:
-                        add_undo((abandoned_claim_id, self.get_claim_info(abandoned_claim_id)))
+                        add_undo((abandoned_claim_id, self.db.get_claim_info(abandoned_claim_id)))
         return undo_info
 
     def advance_update_claim(self, output, height, txid, nout):
         claim_id = output.claim.claim_id
         claim_info = self.claim_info_from_output(output, txid, nout, height)
-        old_claim_info = self.get_claim_info(claim_id)
-        self.put_claim_id_for_outpoint(old_claim_info.txid, old_claim_info.nout, None)
+        old_claim_info = self.db.get_claim_info(claim_id)
+        self.db.put_claim_id_for_outpoint(old_claim_info.txid, old_claim_info.nout, None)
         if old_claim_info.cert_id:
-            self.remove_claim_from_certificate_claims(old_claim_info.cert_id, claim_id)
+            self.db.remove_claim_from_certificate_claims(old_claim_info.cert_id, claim_id)
         if claim_info.cert_id:
-            self.put_claim_id_signed_by_cert_id(claim_info.cert_id, claim_id)
-        self.put_claim_info(claim_id, claim_info)
-        self.put_claim_id_for_outpoint(txid, nout, claim_id)
+            self.db.put_claim_id_signed_by_cert_id(claim_info.cert_id, claim_id)
+        self.db.put_claim_info(claim_id, claim_info)
+        self.db.put_claim_id_for_outpoint(txid, nout, claim_id)
         return claim_id, old_claim_info
 
     def advance_claim_name_transaction(self, output, height, txid, nout):
         claim_id = claim_id_hash(txid, nout)
         claim_info = self.claim_info_from_output(output, txid, nout, height)
         if claim_info.cert_id:
-            self.put_claim_id_signed_by_cert_id(claim_info.cert_id, claim_id)
-        self.put_claim_info(claim_id, claim_info)
-        self.put_claim_for_name(claim_info.name, claim_id)
-        self.put_claim_id_for_outpoint(txid, nout, claim_id)
+            self.db.put_claim_id_signed_by_cert_id(claim_info.cert_id, claim_id)
+        self.db.put_claim_info(claim_id, claim_info)
+        self.db.put_claim_for_name(claim_info.name, claim_id)
+        self.db.put_claim_id_for_outpoint(txid, nout, claim_id)
         return claim_id, None
 
     def backup_from_undo_info(self, claim_id, undo_claim_info):
@@ -96,15 +94,15 @@ class LBRYBlockProcessor(BlockProcessor):
         """
 
         undo_claim_info = ClaimInfo(*undo_claim_info) if undo_claim_info else None
-        current_claim_info = self.get_claim_info(claim_id)
+        current_claim_info = self.db.get_claim_info(claim_id)
         if current_claim_info and undo_claim_info:
             # update, remove current claim
-            self.remove_claim_id_for_outpoint(current_claim_info.txid, current_claim_info.nout)
+            self.db.remove_claim_id_for_outpoint(current_claim_info.txid, current_claim_info.nout)
             if current_claim_info.cert_id:
-                self.remove_claim_from_certificate_claims(current_claim_info.cert_id, claim_id)
+                self.db.remove_claim_from_certificate_claims(current_claim_info.cert_id, claim_id)
         elif current_claim_info and not undo_claim_info:
             # claim, abandon it
-            self.abandon_spent(current_claim_info.txid, current_claim_info.nout)
+            self.db.abandon_spent(current_claim_info.txid, current_claim_info.nout)
         elif not current_claim_info and undo_claim_info:
             # abandon, reclaim it (happens below)
             pass
@@ -113,31 +111,31 @@ class LBRYBlockProcessor(BlockProcessor):
             raise Exception("Unexpected situation occurred on backup, this means the database is inconsistent. "
                             "Please report. Resetting the data folder (reindex) solves it for now.")
         if undo_claim_info:
-            self.put_claim_info(claim_id, undo_claim_info)
+            self.db.put_claim_info(claim_id, undo_claim_info)
             if undo_claim_info.cert_id:
                 cert_id = self._checksig(undo_claim_info.name, undo_claim_info.value, undo_claim_info.address)
-                self.put_claim_id_signed_by_cert_id(cert_id, claim_id)
-            self.put_claim_for_name(undo_claim_info.name, claim_id)
-            self.put_claim_id_for_outpoint(undo_claim_info.txid, undo_claim_info.nout, claim_id)
+                self.db.put_claim_id_signed_by_cert_id(cert_id, claim_id)
+            self.db.put_claim_for_name(undo_claim_info.name, claim_id)
+            self.db.put_claim_id_for_outpoint(undo_claim_info.txid, undo_claim_info.nout, claim_id)
 
     def backup_txs(self, txs):
         self.logger.info("Reorg at height {} with {} transactions.".format(self.height, len(txs)))
-        undo_info = msgpack.loads(self.claim_undo_db.get(struct.pack(">I", self.height)), use_list=False)
+        undo_info = msgpack.loads(self.db.claim_undo_db.get(struct.pack(">I", self.height)), use_list=False)
         for claim_id, undo_claim_info in reversed(undo_info):
             self.backup_from_undo_info(claim_id, undo_claim_info)
         return super().backup_txs(txs)
 
     def backup_blocks(self, raw_blocks):
-        self.batched_flush_claims()
+        self.db.batched_flush_claims()
         super().backup_blocks(raw_blocks=raw_blocks)
-        self.batched_flush_claims()
+        self.db.batched_flush_claims()
 
-    def shutdown(self, executor):
-        self.batched_flush_claims()
-        return super().shutdown(executor=executor)
+    def shutdown(self):
+        self.db.shutdown()
 
-    def backup_claim_name(self, txid, nout):
-        self.abandon_spent(txid, nout)
+    async def flush(self, flush_utxos):
+        self.db.batched_flush_claims()
+        return await super().flush(flush_utxos)
 
     def advance_support(self, claim_support, txid, nout, height, amount):
         # TODO: check for more controller claim rules, like takeover or ordering
@@ -158,7 +156,7 @@ class LBRYBlockProcessor(BlockProcessor):
             if not self.should_validate_signatures:
                 return cert_id
             if cert_id:
-                cert_claim = self.get_claim_info(cert_id)
+                cert_claim = self.db.get_claim_info(cert_id)
                 if cert_claim:
                     certificate = smart_decode(cert_claim.value)
                     claim_dict = smart_decode(value)

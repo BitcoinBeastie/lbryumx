@@ -21,8 +21,20 @@ class LBRYDB(DB):
         self.pending_abandons = {}
         super().__init__(*args, **kwargs)
 
-    async def _open_dbs(self, for_sync):
-        await super()._open_dbs(for_sync=for_sync)
+    def shutdown(self):
+        self.batched_flush_claims()
+        self.claims_db.close()
+        self.names_db.close()
+        self.signatures_db.close()
+        self.outpoint_to_claim_id_db.close()
+        self.claim_undo_db.close()
+        self.utxo_db.close()
+        # electrumx ones
+        self.utxo_db.close()
+        self.history.close_db()
+
+    async def _open_dbs(self, for_sync, compacting):
+        await super()._open_dbs(for_sync=for_sync, compacting=compacting)
         def log_reason(message, is_for_sync):
             reason = 'sync' if is_for_sync else 'serving'
             self.logger.info('{} for {}'.format(message, reason))
@@ -43,10 +55,10 @@ class LBRYDB(DB):
         self.claim_undo_db = self.db_class('claim_undo', for_sync)
         log_reason('opened claim DBs', self.claims_db.for_sync)
 
-    def flush(self, flush_utxos=False):
+    def flush_dbs(self, flush_data, flush_utxos, estimate_txs_remaining):
         # flush claims together with utxos as they are parsed together
         self.batched_flush_claims()
-        return super().flush(flush_utxos=flush_utxos)
+        return super().flush_dbs(flush_data, flush_utxos, estimate_txs_remaining)
 
     def batched_flush_claims(self):
         with self.claims_db.write_batch() as claims_batch:
@@ -91,9 +103,9 @@ class LBRYDB(DB):
                 write_outpoint(key, claim_id)
             else:
                 delete_outpoint(key)
-        self.logger.info('flushed {:,d} blocks with {:,d} claims, {:,d} outpoints, {:,d} names '
+        self.logger.info('flushed at height {:,d} with {:,d} claims, {:,d} outpoints, {:,d} names '
                          'and {:,d} certificates added while {:,d} were abandoned in {:.1f}s, committing...'
-                         .format(self.height - self.db_height,
+                         .format(self.db_height,
                                  len(self.claim_cache), len(self.outpoint_to_claim_id_cache),
                                  len(self.claims_for_name_cache),
                                  len(self.claims_signed_by_cert_cache), len(self.pending_abandons),
@@ -104,8 +116,8 @@ class LBRYDB(DB):
         self.outpoint_to_claim_id_cache = {}
         self.pending_abandons = {}
 
-    def assert_flushed(self):
-        super().assert_flushed()
+    def assert_flushed(self, flush_data):
+        super().assert_flushed(flush_data)
         assert not self.claim_cache
         assert not self.claims_for_name_cache
         assert not self.claims_signed_by_cert_cache
@@ -191,3 +203,8 @@ class LBRYDB(DB):
             if input.prev_hash == claim_info.txid and input.prev_idx == claim_info.nout:
                 return input
         return False
+
+    def write_undo(self, pending_undo):
+        with self.claim_undo_db.write_batch() as writer:
+            for height, undo_info in pending_undo:
+                writer.put(struct.pack(">I", height), msgpack.dumps(undo_info))

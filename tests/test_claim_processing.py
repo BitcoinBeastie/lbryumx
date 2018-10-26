@@ -18,7 +18,7 @@ from .data import claim_data
 def test_simple_claim_info_advance(block_processor):
     claim_id, expected_claim_info = make_claim(block_processor)
 
-    claim_info = block_processor.get_claim_info(claim_id)
+    claim_info = block_processor.db.get_claim_info(claim_id)
     assert_claim_info_equal(claim_info, expected_claim_info)
 
 
@@ -31,13 +31,13 @@ def test_signed_claim_info_advance(block_processor):
     value = ClaimDict.load_dict(claim_data.test_claim_dict).serialized
     signed_claim_id, expected_signed_claim_info = make_claim(block_processor, signed_claim_name, value, privkey, cert_claim_id)
 
-    cert_claim_info = block_processor.get_claim_info(cert_claim_id)
+    cert_claim_info = block_processor.db.get_claim_info(cert_claim_id)
     assert_claim_info_equal(cert_claim_info, expected_claim_info)
 
-    signed_cert_claim_info = block_processor.get_claim_info(signed_claim_id)
+    signed_cert_claim_info = block_processor.db.get_claim_info(signed_claim_id)
     assert_claim_info_equal(signed_cert_claim_info, expected_signed_claim_info)
 
-    block_processor.get_signed_claim_ids_by_cert_id(cert_claim_id) == [signed_claim_id]
+    block_processor.db.get_signed_claim_ids_by_cert_id(cert_claim_id) == [signed_claim_id]
 
 
 def test_claim_sequence_incremented_on_claim_name_advance(block_processor):
@@ -47,7 +47,7 @@ def test_claim_sequence_incremented_on_claim_name_advance(block_processor):
         claim_ids.append(claim_id)
 
     for idx, claim_id in enumerate(claim_ids, start=1):
-        assert block_processor.get_claims_for_name(b'ordered')[claim_id] == idx
+        assert block_processor.db.get_claims_for_name(b'ordered')[claim_id] == idx
 
 
 def test_cert_info_is_updated_on_signed_claim_update_advances(block_processor):
@@ -66,8 +66,8 @@ def test_cert_info_is_updated_on_signed_claim_update_advances(block_processor):
     value = ClaimDict.load_dict(claim_data.test_claim_dict).serialized
     signed_claim_id, _ = update_claim(block_processor, signed_claim_name, value, privkey2, cert2_claim_id, claim_id=signed_claim_id)
 
-    block_processor.get_signed_claim_ids_by_cert_id(cert_claim_id) == []
-    block_processor.get_signed_claim_ids_by_cert_id(cert2_claim_id) == [signed_claim_id]
+    block_processor.db.get_signed_claim_ids_by_cert_id(cert_claim_id) == []
+    block_processor.db.get_signed_claim_ids_by_cert_id(cert2_claim_id) == [signed_claim_id]
 
 
 def test_claim_update_validator(block_processor):
@@ -75,11 +75,11 @@ def test_claim_update_validator(block_processor):
     prev_hash, prev_idx = b'previous_claim_txid', 42
     input = TxInput(prev_hash, prev_idx, b'script', 1)
     claim = ClaimUpdate(b'name', claim_id, b'new value')
-    assert not block_processor.get_update_input(claim, [input])
+    assert not block_processor.db.get_update_input(claim, [input])
 
-    block_processor.put_claim_info(claim_id, ClaimInfo(b'name', b'value', prev_hash, prev_idx, 20, b'address', 1, None))
+    block_processor.db.put_claim_info(claim_id, ClaimInfo(b'name', b'value', prev_hash, prev_idx, 20, b'address', 1, None))
 
-    assert block_processor.get_update_input(claim, [input])
+    assert block_processor.db.get_update_input(claim, [input])
 
 
 def update_claim(*args, **kwargs):

@@ -2,7 +2,6 @@ import asyncio
 import json
 import pytest
 from electrumx.server.controller import Controller
-from electrumx.server.db import DB
 from xprocess import ProcessStarter
 from os import environ
 from lbryumx.coin import LBC, LBCRegTest
@@ -12,6 +11,7 @@ from urllib.request import urlopen
 import os
 import stat
 
+from lbryumx.db import LBRYDB
 from tests.data.functional_claims import initial_claims
 
 
@@ -38,14 +38,11 @@ async def block_processor(tmpdir_factory):
     environ['DB_DIRECTORY'] = tmpdir_factory.mktemp('db', numbered=True).strpath
     environ['DAEMON_URL'] = ''
     env = Env(LBC)
-    bp = LBC.BLOCK_PROCESSOR(env, DB(env), None, None)
+    bp = LBC.BLOCK_PROCESSOR(env, LBRYDB(env), None, None)
     await bp._first_open_dbs()
     bp._caught_up_event = asyncio.Event()
     yield bp
-    for attr in dir(bp):  # hack to close dbs on tear down
-        obj = getattr(bp, attr)
-        if isinstance(obj, Storage):
-            obj.close()
+    bp.shutdown()
 
 
 @pytest.fixture('module')
