@@ -8,6 +8,8 @@ import electrumx.lib.util as util
 
 from lbryschema.uri import parse_lbry_uri
 from lbryschema.error import URIParseError, DecodeError
+from lbryumx.block_processor import LBRYBlockProcessor
+from lbryumx.db import LBRYDB
 
 
 class LBRYElectrumX(ElectrumX):
@@ -17,8 +19,9 @@ class LBRYElectrumX(ElectrumX):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # fixme: this is a rebase hack, we need to go through ChainState instead later
-        self.daemon = self.chain_state._daemon
-        self.bp = self.chain_state._bp
+        self.daemon = self.session_mgr.daemon
+        self.bp: LBRYBlockProcessor = self.session_mgr.bp
+        self.db: LBRYDB = self.bp.db
         # fixme: lbryum specific subscribe
         self.subscribe_height = False
 
@@ -112,7 +115,7 @@ class LBRYElectrumX(ElectrumX):
         transaction_info = await self.daemon.getrawtransaction(tx_hash, True)
         if transaction_info and 'hex' in transaction_info and 'confirmations' in transaction_info:
             # an unconfirmed transaction from lbrycrdd will not have a 'confirmations' field
-            height = self.bp.db_height
+            height = self.db.db_height
             height = height - transaction_info['confirmations']
             return height
         elif transaction_info and 'hex' in transaction_info:
@@ -130,18 +133,18 @@ class LBRYElectrumX(ElectrumX):
 
     def get_claim_ids_signed_by(self, certificate_id):
         raw_certificate_id = unhexlify(certificate_id)[::-1]
-        raw_claim_ids = self.bp.get_signed_claim_ids_by_cert_id(raw_certificate_id)
+        raw_claim_ids = self.db.get_signed_claim_ids_by_cert_id(raw_certificate_id)
         return list(map(hash_to_hex_str, raw_claim_ids))
 
     def get_signed_claims_with_name_for_channel(self, channel_id, name):
-        claim_ids_for_name = list(self.bp.get_claims_for_name(name.encode('ISO-8859-1')).keys())
+        claim_ids_for_name = list(self.db.get_claims_for_name(name.encode('ISO-8859-1')).keys())
         claim_ids_for_name = set(map(hash_to_hex_str, claim_ids_for_name))
         channel_claim_ids = set(self.get_claim_ids_signed_by(channel_id))
         return claim_ids_for_name.intersection(channel_claim_ids)
 
     async def claimtrie_getclaimssignedbynthtoname(self, name, n):
         n = int(n)
-        for claim_id, sequence in self.bp.get_claims_for_name(name.encode('ISO-8859-1')).items():
+        for claim_id, sequence in self.db.get_claims_for_name(name.encode('ISO-8859-1')).items():
             if n == sequence:
                 return await self.claimtrie_getclaimssignedbyid(hash_to_hex_str(claim_id))
 
@@ -159,9 +162,9 @@ class LBRYElectrumX(ElectrumX):
             tx_hash, nout = proof['txhash'], int(proof['nOut'])
             transaction_info = await self.daemon.getrawtransaction(tx_hash, True)
             result['transaction'] = transaction_info['hex']
-            result['height'] = (self.bp.db_height - transaction_info['confirmations']) + 1
-            raw_claim_id = self.bp.get_claim_id_from_outpoint(unhexlify(tx_hash)[::-1], nout)
-            sequence = self.bp.get_claims_for_name(name.encode('ISO-8859-1')).get(raw_claim_id)
+            result['height'] = (self.db.db_height - transaction_info['confirmations']) + 1
+            raw_claim_id = self.db.get_claim_id_from_outpoint(unhexlify(tx_hash)[::-1], nout)
+            sequence = self.db.get_claims_for_name(name.encode('ISO-8859-1')).get(raw_claim_id)
             if sequence:
                 claim_id = hexlify(raw_claim_id[::-1]).decode()
                 claim_info = await self.daemon.getclaimbyid(claim_id)
@@ -177,7 +180,7 @@ class LBRYElectrumX(ElectrumX):
 
     async def claimtrie_getnthclaimforname(self, name, n):
         n = int(n)
-        for claim_id, sequence in self.bp.get_claims_for_name(name.encode('ISO-8859-1')).items():
+        for claim_id, sequence in self.db.get_claims_for_name(name.encode('ISO-8859-1')).items():
             if n == sequence:
                 return await self.claimtrie_getclaimbyid(hash_to_hex_str(claim_id))
 
@@ -210,11 +213,11 @@ class LBRYElectrumX(ElectrumX):
         name = name or claim['name']
         claim_id = claim['claimId']
         raw_claim_id = unhexlify(claim_id)[::-1]
-        if not self.bp.get_claim_info(raw_claim_id):
+        if not self.db.get_claim_info(raw_claim_id):
             #raise RPCError("Lbrycrd has {} but not lbryumx, please submit a bug report.".format(claim_id))
             return {}
-        address = self.bp.get_claim_info(raw_claim_id).address.decode()
-        sequence = self.bp.get_claims_for_name(name.encode('ISO-8859-1')).get(raw_claim_id)
+        address = self.db.get_claim_info(raw_claim_id).address.decode()
+        sequence = self.db.get_claims_for_name(name.encode('ISO-8859-1')).get(raw_claim_id)
         if not sequence:
             return {}
         supports = self.format_supports_from_daemon(claim.get('supports', []))  # fixme: lbrycrd#124
@@ -230,7 +233,7 @@ class LBRYElectrumX(ElectrumX):
             "txid": claim['txid'],
             "nout": claim['n'],
             "amount": amount,
-            "depth": self.bp.db_height - height,
+            "depth": self.db.db_height - height,
             "height": height,
             "value": hexlify(claim['value'].encode('ISO-8859-1')).decode(),
             "claim_sequence": sequence,  # from index
@@ -278,7 +281,7 @@ class LBRYElectrumX(ElectrumX):
     async def slow_get_claim_by_id_using_name(self, claim_id):
         # TODO: temporary workaround for a lbrycrd bug on indexing. Should be removed when it gets stable
         raw_claim_id = unhexlify(claim_id)[::-1]
-        claim = self.bp.get_claim_info(raw_claim_id)
+        claim = self.db.get_claim_info(raw_claim_id)
         if claim:
             name = claim.name.decode('ISO-8859-1')
             claims = await self.daemon.getclaimsforname(name)
@@ -354,7 +357,7 @@ class LBRYElectrumX(ElectrumX):
                     # is not an unclaimed winning name
                     (claim['resolution_type'] != WINNING or proof_has_winning_claim(claim['result']['proof']))):
                 raw_claim_id = unhexlify(claim['result']['claim_id'])[::-1]
-                raw_certificate_id = self.bp.get_claim_info(raw_claim_id).cert_id
+                raw_certificate_id = self.db.get_claim_info(raw_claim_id).cert_id
                 if raw_certificate_id:
                     certificate_id = hash_to_hex_str(raw_certificate_id)
                     certificate = await self.claimtrie_getclaimbyid(certificate_id)
