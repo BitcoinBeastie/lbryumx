@@ -7,10 +7,9 @@ import logging
 import traceback
 
 from electrumx.server.env import Env
-from electrumx.server import controller as controller_module
 
 from lbryumx.coin import LBC
-from lbryumx.db import LBRYDB
+from lbryumx.controller import LBRYController
 
 
 def main():
@@ -18,9 +17,8 @@ def main():
     log_fmt = Env.default('LOG_FORMAT', '%(levelname)s:%(name)s:%(message)s')
     logging.basicConfig(level=logging.INFO, format=log_fmt)
     logging.info('LbryumX server starting')
-    controller_module.DB = LBRYDB
     try:
-        controller = controller_module.Controller(Env(LBC))
+        controller = LBRYController(Env(LBC))
         controller.run()
     except Exception:
         traceback.print_exc()
