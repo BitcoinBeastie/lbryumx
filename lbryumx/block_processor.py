@@ -17,6 +17,8 @@ class LBRYBlockProcessor(BlockProcessor):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if self.env.coin.NET == "regtest":
+            self.prefetcher.polling_delay = 0.5
 
         self.should_validate_signatures = self.env.boolean('VALIDATE_CLAIM_SIGNATURES', False)
         self.logger.info("LbryumX Block Processor - Validating signatures: {}".format(self.should_validate_signatures))
