@@ -1,6 +1,6 @@
 from asyncio import Event
 
-from aiorpcx import _version as aiorpcx_version, TaskGroup
+from aiorpcx import _version as aiorpcx_version, TaskGroup, spawn
 from electrumx.lib.util import version_string
 from electrumx.server.controller import Controller, Notifications
 from electrumx.server.mempool import MemPool, MemPoolAPI
@@ -11,7 +11,7 @@ from lbryumx.db import LBRYDB
 
 
 class LBRYController(Controller):
-    async def serve(self, shutdown_event):
+    async def serve(self, shutdown_event, startup_event=None):
         '''Start the RPC server and wait for the mempool to synchronize.  Then
         start serving external clients.
         '''
@@ -31,7 +31,7 @@ class LBRYController(Controller):
 
         daemon = Daemon(env.coin, env.daemon_url)
         db = LBRYDB(env) if env.coin.NAME == 'LBRY' else DB(env)
-        bp = BlockProcessor(env, db, daemon, notifications)
+        self.bp = bp = BlockProcessor(env, db, daemon, notifications)
 
         # Set notifications up to implement the MemPoolAPI
         notifications.height = daemon.height
@@ -50,7 +50,7 @@ class LBRYController(Controller):
         await daemon.height()
 
         caught_up_event = Event()
-        mempool_event = Event()
+        mempool_event = startup_event or Event()
 
         async def wait_for_catchup():
             await caught_up_event.wait()
@@ -62,3 +62,13 @@ class LBRYController(Controller):
             await group.spawn(bp.fetch_and_process_blocks(caught_up_event))
             await group.spawn(wait_for_catchup())
 
+    async def simple_runner(self, shutdown_event, startup_event):
+        '''
+        Testing utility to control server
+        '''
+        server_task = await spawn(self.serve(shutdown_event, startup_event))
+        # Wait for shutdown, log on receipt of the event
+        await shutdown_event.wait()
+        self.bp.shutdown()
+        self.logger.info('shutting down')
+        server_task.cancel()
