@@ -1,2 +1,0 @@
-git+https://github.com/lbryio/torba.git@master#egg=torba
-git+https://github.com/lbryio/orchstr8.git@master#egg=orchstr8

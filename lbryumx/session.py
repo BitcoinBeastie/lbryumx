@@ -6,8 +6,8 @@ from torba.server.hash import hash_to_hex_str
 from torba.server.session import ElectrumX
 import torba.server.util as util
 
-from lbryschema.uri import parse_lbry_uri
-from lbryschema.error import URIParseError, DecodeError
+from lbrynet.schema.uri import parse_lbry_uri
+from lbrynet.schema.error import URIParseError, DecodeError
 from lbryumx.block_processor import LBRYBlockProcessor
 from lbryumx.db import LBRYDB
 
