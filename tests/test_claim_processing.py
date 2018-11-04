@@ -1,8 +1,8 @@
 from hashlib import sha256
 from random import getrandbits
 
-from electrumx.lib.hash import hash_to_hex_str
-from electrumx.lib.tx import TxInput
+from torba.server.hash import hash_to_hex_str
+from torba.server.tx import TxInput
 from lbryschema.decode import smart_decode
 from lbryschema.schema import SECP256k1
 from lbryschema.claim import ClaimDict

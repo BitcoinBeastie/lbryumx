@@ -1,6 +1,6 @@
 from collections import namedtuple
 import msgpack
-from electrumx.lib.util import cachedproperty
+from torba.server.util import cachedproperty
 # Classes representing data and their serializers, if any.
 
 

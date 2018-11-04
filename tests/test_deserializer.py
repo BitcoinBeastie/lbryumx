@@ -1,6 +1,6 @@
 from binascii import unhexlify, hexlify
 
-from electrumx.lib.hash import hex_str_to_hash
+from torba.server.hash import hex_str_to_hash
 
 from lbryumx.coin import LBC
 from lbryumx.model import NameClaim, ClaimUpdate

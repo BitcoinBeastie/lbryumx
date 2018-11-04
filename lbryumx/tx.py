@@ -1,4 +1,4 @@
-from electrumx.lib.tx import Deserializer
+from torba.server.tx import Deserializer
 from lbryumx.opcodes import decode_claim_script
 from lbryumx.model import TxClaimOutput, LBRYTx
 

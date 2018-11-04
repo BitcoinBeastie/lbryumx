@@ -3,9 +3,9 @@ import struct
 import time
 
 import msgpack
-from electrumx.lib.hash import hash_to_hex_str
+from torba.server.hash import hash_to_hex_str
 
-from electrumx.server.block_processor import BlockProcessor
+from torba.server.block_processor import BlockProcessor
 from lbryschema.proto.claim_pb2 import Claim
 from lbryschema.uri import parse_lbry_uri
 from lbryschema.decode import smart_decode

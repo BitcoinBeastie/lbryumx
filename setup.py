@@ -25,7 +25,7 @@ setup(
     install_requires=(
         'msgpack',
         'lbryschema',
-        'electrumx',
+        'torba[server]',
     ),
     extras_require={
         'test': (

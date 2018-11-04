@@ -1,12 +1,12 @@
 import asyncio
 import json
 import pytest
-from electrumx.server.controller import Controller
+from torba.server import Server
 from xprocess import ProcessStarter
 from os import environ
 from lbryumx.coin import LBC, LBCRegTest
-from electrumx.server.storage import Storage
-from electrumx.server.env import Env
+from torba.server.storage import Storage
+from torba.server.env import Env
 from urllib.request import urlopen
 import os
 import stat
@@ -62,7 +62,7 @@ def setup_session(data_dir, rpc_port):
     conf = {'DB_DIRECTORY': data_dir,
             'DAEMON_URL': 'http://lbry:lbry@localhost:{}/'.format(rpc_port)}
     os.environ.update(conf)
-    controller = Controller(Env(LBCRegTest))
+    controller = Server(Env(LBCRegTest))
     session = LBC.SESSIONCLS(controller, 'TCP')
     return session
 

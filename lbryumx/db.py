@@ -2,9 +2,9 @@ import msgpack
 import struct
 
 import time
-from electrumx.lib.hash import hash_to_hex_str
+from torba.server.hash import hash_to_hex_str
 
-from electrumx.server.db import DB
+from torba.server.db import DB
 
 from lbryumx.model import ClaimInfo
 

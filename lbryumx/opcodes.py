@@ -1,5 +1,5 @@
 import struct
-from electrumx.lib.enum import Enumeration
+from torba.server.enum import Enumeration
 from lbryumx.model import NameClaim, ClaimSupport, ClaimUpdate
 # TODO: Take this to lbryschema (it's also on lbryum and lbryum-server)
 

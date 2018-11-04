@@ -2,9 +2,9 @@ import math
 from binascii import unhexlify, hexlify
 
 from aiorpcx import RPCError
-from electrumx.lib.hash import hash_to_hex_str
-from electrumx.server.session import ElectrumX
-import electrumx.lib.util as util
+from torba.server.hash import hash_to_hex_str
+from torba.server.session import ElectrumX
+import torba.server.util as util
 
 from lbryschema.uri import parse_lbry_uri
 from lbryschema.error import URIParseError, DecodeError

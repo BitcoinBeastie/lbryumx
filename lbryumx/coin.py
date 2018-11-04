@@ -1,10 +1,10 @@
 import struct
 
-from electrumx.lib.script import ScriptPubKey, _match_ops, OpCodes
-from electrumx.lib.util import cachedproperty
-from electrumx.lib.hash import hash_to_hex_str, HASHX_LEN
+from torba.server.script import ScriptPubKey, _match_ops, OpCodes
+from torba.server.util import cachedproperty
+from torba.server.hash import hash_to_hex_str, HASHX_LEN
 from hashlib import sha256
-from electrumx.lib.coins import Coin, CoinError
+from torba.server.coins import Coin, CoinError
 
 from lbryumx.opcodes import decode_claim_script, opcodes as lbry_opcodes
 
