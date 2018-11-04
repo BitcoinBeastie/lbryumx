@@ -1,18 +1,17 @@
-sudo: required
+dist: xenial
+sudo: true
 language: python
-
-python:
-  - "3.6"
+python: "3.7"
 
 before_install:
   - bash .install_leveldb.sh
 
 install:
-  - pip install -r requirements.txt
-  - pip install -r requirements_testing.txt
+  - pip install git+https://github.com/lbryio/torba.git
+  - pip install git+https://github.com/lbryio/lbryschema.git
   - pip install -e .[test]
-  - git clone https://github.com/lbryio/lbry.git --branch lbryum-refactor
-  - pushd lbry && sed -e '/lbryschema/d' -i setup.py && pip install -e . && popd
+  - git clone https://github.com/lbryio/lbry.git
+  - pushd lbry && pip install -e . && popd
 
 script:
   - coverage run -p `which pytest` tests/
