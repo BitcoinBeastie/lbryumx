@@ -1,6 +1,5 @@
 import hashlib
 import struct
-import time
 
 import msgpack
 from torba.server.hash import hash_to_hex_str

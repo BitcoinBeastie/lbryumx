@@ -14,9 +14,11 @@ class LBC(Coin):
     from lbryumx.block_processor import LBRYBlockProcessor
     from lbryumx.tx import LBRYDeserializer
     from lbryumx.daemon import LBCDaemon
+    from lbryumx.db import LBRYDB
     DAEMON = LBCDaemon
     SESSIONCLS = LBRYElectrumX
     BLOCK_PROCESSOR = LBRYBlockProcessor
+    DB = LBRYDB
     DESERIALIZER = LBRYDeserializer
     NAME = "LBRY"
     SHORTNAME = "LBC"

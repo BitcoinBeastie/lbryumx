@@ -6,10 +6,10 @@
 import logging
 import traceback
 
-from electrumx.server.env import Env
+from torba.server.env import Env
+from torba.server import Server
 
 from lbryumx.coin import LBC
-from lbryumx.controller import LBRYController
 
 
 def main():
@@ -18,7 +18,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format=log_fmt)
     logging.info('LbryumX server starting')
     try:
-        controller = LBRYController(Env(LBC))
+        controller = Server(Env(LBC))
         controller.run()
     except Exception:
         traceback.print_exc()
